@@ -27,7 +27,11 @@ def create_app(config_class=None):
         
     # Ensure correct URI format for Windows
     db_uri_path = db_path.replace('\\', '/')
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL') or f"sqlite:///{db_uri_path}"
+    database_url = os.getenv('DATABASE_URL')
+    if database_url and database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+        
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url or f"sqlite:///{db_uri_path}"
     
     print(f"DEBUG: Instance Path: {app.instance_path}")
     print(f"DEBUG: DB Path: {db_path}")
