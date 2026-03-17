@@ -150,11 +150,11 @@ def admin_users():
             try:
                 db.session.commit()
                 log_activity('UPDATE_USER', details=f'Updated user {u.username}')
-                flash("✅ Đã cập nhật người dùng.", "success")
+                flash(t('msg_user_updated') if t('msg_user_updated') != 'msg_user_updated' else "✅ Đã cập nhật người dùng.", "success")
             except SQLAlchemyError as e:
                 db.session.rollback()
                 current_app.logger.exception("update_user error: %s", e)
-                flash("❌ Lỗi khi cập nhật người dùng.", "danger")
+                flash(t('err_user_update_failed') if t('err_user_update_failed') != 'err_user_update_failed' else "❌ Lỗi khi cập nhật người dùng.", "danger")
             return redirect(url_for('admin.admin_users'))
         elif action == 'delete_user':
             try:
@@ -162,27 +162,27 @@ def admin_users():
             except Exception:
                 uid = 0
             if uid == current_user.id:
-                flash("❌ Không thể xoá tài khoản hiện tại.", "warning")
+                flash(t('err_cannot_delete_self') if t('err_cannot_delete_self') != 'err_cannot_delete_self' else "❌ Không thể xoá tài khoản hiện tại.", "warning")
                 return redirect(url_for('admin.admin_users'))
             u = db.session.get(User, uid)
             if not u:
-                flash("Không tìm thấy người dùng.", "warning")
+                flash(t('err_user_not_found') if t('err_user_not_found') != 'err_user_not_found' else "Không tìm thấy người dùng.", "warning")
                 return redirect(url_for('admin.admin_users'))
             
             # Manager cannot delete admin
             if current_user.role == 'manager' and u.role == 'admin':
-                flash("Manager không thể xóa tài khoản Admin.", "danger")
+                flash(t('err_manager_delete_admin') if t('err_manager_delete_admin') != 'err_manager_delete_admin' else "Manager không thể xóa tài khoản Admin.", "danger")
                 return redirect(url_for('admin.admin_users'))
 
             try:
                 db.session.delete(u)
                 db.session.commit()
                 log_activity('DELETE_USER', details=f'Deleted user {u.username}')
-                flash("🗑️ Đã xoá người dùng.", "success")
+                flash(t('msg_user_deleted') if t('msg_user_deleted') != 'msg_user_deleted' else "🗑️ Đã xoá người dùng.", "success")
             except SQLAlchemyError as e:
                 db.session.rollback()
                 current_app.logger.exception("delete_user error: %s", e)
-                flash("❌ Lỗi khi xoá người dùng.", "danger")
+                flash(t('err_user_delete_failed') if t('err_user_delete_failed') != 'err_user_delete_failed' else "❌ Lỗi khi xoá người dùng.", "danger")
             return redirect(url_for('admin.admin_users'))
     if current_user.role == 'manager':
         users = User.query.filter(User.role != 'admin').order_by(User.display_name).all()

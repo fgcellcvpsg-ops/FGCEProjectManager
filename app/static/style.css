@@ -65,6 +65,21 @@
     color: #0d6efd !important;
 }
 
+.client-actions-menu {
+    min-width: 220px;
+    z-index: 3000;
+}
+
+[data-theme="light"] .clients-page .table thead th {
+    color: #0f172a;
+}
+
+[data-theme="light"] .clients-page .client-symbol {
+    background-color: #04038d;
+    color: #ffffff;
+    font-weight: 700;
+}
+
 /* Custom Status Progress Bar Colors */
 .bg-status-close {
     background-color: #795548 !important; /* Brown */

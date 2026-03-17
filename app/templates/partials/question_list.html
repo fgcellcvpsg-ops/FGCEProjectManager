@@ -56,7 +56,7 @@
                                 <p class="mb-0 {% if not is_answered %}text-danger{% else %}text-dark{% endif %}" style="font-size: 0.85rem; white-space: pre-wrap; display: inline;">{{ q.question }}</p>
                                 
                                 {% set creator_role_level = q.created_by.role_level if q.created_by else 0 %}
-                                {% set can_reply = current_user.role in ['admin', 'manager'] or ((current_user.id != q.created_by_id) and (current_user.role_level > creator_role_level)) %}
+                                {% set can_reply = (current_user.id|int != q.created_by_id|int) and ((current_user.role_level >= 4) or (current_user.role_level > creator_role_level)) %}
                                 
                                 {% if not is_answered and can_reply %}
                                     <a href="#" class="text-primary fw-bold ms-1 text-decoration-none" 
@@ -88,10 +88,10 @@
                             <div class="d-flex justify-content-end gap-2 mt-2 align-items-center">
                             </div>
 
-                            <!-- Reply Form -->
+                            {% if not is_answered and can_reply %}
                             <div class="collapse mt-2" id="replyForm-{{ source|default('default') }}-{{ q.id }}">
                                 <div class="bg-light rounded-2 p-2">
-                                    <form hx-post="{{ url_for('projects.answer_question', question_id=q.id) }}" hx-target="#question-list-{{ source|default('default') }}" hx-swap="outerHTML">
+                                    <form method="POST" action="{{ url_for('projects.answer_question', question_id=q.id) }}" hx-post="{{ url_for('projects.answer_question', question_id=q.id) }}" hx-target="#question-list-{{ source|default('default') }}" hx-swap="outerHTML">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <input type="hidden" name="source" value="{{ source or 'project_detail' }}">
                                         <div class="mb-2">
@@ -106,6 +106,7 @@
                                     </form>
                                 </div>
                             </div>
+                            {% endif %}
                          </div>
                     {% endfor %}
                 </div>

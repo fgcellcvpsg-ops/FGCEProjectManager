@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <label class="form-label">{{ t('assignee') }}</label>
             {% set current_assignee_id = task.assignee_id if task else None %}
             <select name="assignee" class="form-select" {% if not is_admin_manager %}disabled{% endif %}>
-              <option value="">— Không giao —</option>
+              <option value="">— {{ t('unassigned') }} —</option>
               {% for u in users %}
                 <option value="{{ u.id }}" {% if current_assignee_id == u.id %}selected{% endif %}>
                   {{ u.display_name or u.username }}
@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
           
           <div class="col-md-4">
-            <label class="form-label">Thời gian dự kiến (giờ)</label>
+            <label class="form-label">{{ t('label_estimated_duration') }}</label>
             <input type="number" step="0.25" min="0" name="estimated_hours" class="form-control"
                    value="{{ '%.1f'|format((task.estimated_hours or 0) if task else 0) }}" {% if not is_admin_manager %}disabled{% endif %}>
           </div>

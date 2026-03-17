@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Danh sách báo giá{% endblock %}
+{% block title %}{{ t('page_quotation_list_title') }}{% endblock %}
 
 {% block content %}
 <style>
@@ -41,10 +41,10 @@
             <!-- View Switcher -->
             <div class="btn-group me-2" role="group">
                 <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm fw-bold btn-outline-primary">
-                    <i class="fas fa-list-ul me-2"></i>Dự án
+                    <i class="fas fa-list-ul me-2"></i>{{ t('nav_project_list') }}
                 </a>
                 <a href="{{ url_for('main.quotation_list') }}" class="btn btn-sm fw-bold btn-primary">
-                    <i class="fas fa-file-invoice-dollar me-2"></i>Báo giá
+                    <i class="fas fa-file-invoice-dollar me-2"></i>{{ t('nav_quotation_list') }}
                 </a>
             </div>
             <!-- Quotation Sub-status Filters -->
@@ -89,12 +89,12 @@
                 <ul class="dropdown-menu shadow-sm border-0 rounded-3 mt-2">
                     <li>
                         <a class="dropdown-item py-2" href="{{ url_for('projects.add_project') }}">
-                            <i class="fas fa-folder-plus me-2 text-primary"></i>Thêm dự án mới
+                            <i class="fas fa-folder-plus me-2 text-primary"></i>{{ t('menu_add_project') }}
                         </a>
                     </li>
                     <li>
                         <a class="dropdown-item py-2" href="{{ url_for('projects.add_quotation') }}">
-                            <i class="fas fa-file-invoice-dollar me-2 text-success"></i>Thêm dự án báo giá
+                            <i class="fas fa-file-invoice-dollar me-2 text-success"></i>{{ t('menu_add_quotation') }}
                         </a>
                     </li>
                 </ul>
@@ -108,14 +108,14 @@
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="bg-light">
-                        <tr>
-                            <th class="ps-4 py-3 text-secondary text-uppercase small fw-bold" style="width: 40%;">Tên dự án</th>
-                            <th class="py-3 text-secondary text-uppercase small fw-bold">Khách hàng</th>
-                            <th class="py-3 text-secondary text-uppercase small fw-bold">Người phụ trách</th>
-                            <th class="py-3 text-secondary text-uppercase small fw-bold">Trạng thái</th>
-                            <th class="py-3 text-secondary text-uppercase small fw-bold">Tiến độ</th>
-                            <th class="py-3 text-secondary text-uppercase small fw-bold">Ngày tạo</th>
-                            <th class="pe-4 py-3 text-end text-secondary text-uppercase small fw-bold">Hành động</th>
+                        <tr class="align-middle">
+                            <th class="ps-4 py-3 text-secondary text-uppercase small fw-bold" style="width: 40%;">{{ t('col_project_name') }}</th>
+                            <th class="py-3 text-secondary text-uppercase small fw-bold">{{ t('col_client') }}</th>
+                            <th class="py-3 text-secondary text-uppercase small fw-bold">{{ t('col_assignee') }}</th>
+                            <th class="py-3 text-secondary text-uppercase small fw-bold">{{ t('col_status') }}</th>
+                            <th class="py-3 text-secondary text-uppercase small fw-bold">{{ t('col_progress') }}</th>
+                            <th class="py-3 text-secondary text-uppercase small fw-bold">{{ t('col_created') }}</th>
+                            <th class="pe-4 py-3 text-end text-secondary text-uppercase small fw-bold">{{ t('col_actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -215,9 +215,9 @@
                                         {% if current_user.role in ['admin','manager'] or (current_user.role == 'quotation' and p.status and p.status.startswith('Quotation')) %}
                                         <li><hr class="dropdown-divider"></li>
                                         <li>
-                                            <form method="POST" action="{{ url_for('projects.delete_project', project_id=p.id) }}">
+                                            <form method="POST" action="{{ url_for('projects.delete_project', project_id=p.id) }}" data-confirm="{{ t('confirm_delete') }}">
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <button type="submit" class="dropdown-item text-danger" data-confirm="{{ t('confirm_delete') }}" onclick="return confirm(this.dataset.confirm);"><i class="fas fa-trash-alt me-2"></i>{{ t('btn_delete') }}</button>
+                                                <button type="submit" class="dropdown-item text-danger"><i class="fas fa-trash-alt me-2"></i>{{ t('btn_delete') }}</button>
                                             </form>
                                         </li>
                                         {% endif %}
@@ -227,9 +227,9 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="6" class="text-center py-5 text-muted">
+                            <td colspan="7" class="text-center py-5 text-muted">
                                 <i class="fas fa-folder-open fa-3x mb-3 text-light"></i>
-                                <p class="mb-0">Chưa có báo giá nào.</p>
+                                <p class="mb-0">{{ t('no_quotations') }}</p>
                             </td>
                         </tr>
                         {% endfor %}

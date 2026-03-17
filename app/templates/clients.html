@@ -80,11 +80,11 @@
                 {{ c.note or '' }}
               </td>
               <td class="pe-4 text-end">
-                <div class="dropdown">
-                  <button class="action-btn" type="button" data-bs-toggle="dropdown">
+                <div class="dropdown client-actions-dropdown" data-client-id="{{ c.id }}">
+                  <button class="action-btn client-actions-toggle" type="button">
                     <i class="fas fa-ellipsis-v action-icon"></i>
                   </button>
-                  <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0">
+                  <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 client-actions-menu" data-client-id="{{ c.id }}">
                     <li>
                       <a class="dropdown-item" href="{{ url_for('projects.add_project', client_id=c.id) }}">
                         <i class="bi bi-plus-circle-fill me-2 text-success"></i>{{ t('btn_add_project') }}
@@ -204,6 +204,82 @@ document.addEventListener('DOMContentLoaded', function() {
   var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
     return new bootstrap.Tooltip(tooltipTriggerEl)
   })
+
+  const body = document.body;
+  let openMenu = null;
+
+  function closeOpenMenu() {
+    if (openMenu) {
+      openMenu.classList.remove('show');
+      openMenu.style.display = 'none';
+      openMenu = null;
+    }
+  }
+
+  function openClientMenu(trigger, menu) {
+    const rect = trigger.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.display = 'block';
+    menu.classList.add('show');
+
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const menuHeight = menu.offsetHeight;
+    const spaceBelow = viewportHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    let top;
+    if (spaceBelow < menuHeight && spaceAbove > menuHeight) {
+      top = rect.top - menuHeight + rect.height;
+    } else {
+      top = rect.bottom;
+    }
+
+    menu.style.top = top + 'px';
+    menu.style.left = (rect.right - menu.offsetWidth) + 'px';
+
+    openMenu = menu;
+  }
+
+  document.addEventListener('click', function(e) {
+    const toggle = e.target.closest('.client-actions-toggle');
+    if (toggle) {
+      e.preventDefault();
+      e.stopPropagation();
+      const container = toggle.closest('.client-actions-dropdown');
+      if (!container) return;
+      const clientId = container.getAttribute('data-client-id');
+      let menu = container.querySelector('.client-actions-menu');
+      if (!menu && clientId) {
+        menu = document.querySelector('.client-actions-menu[data-client-id="' + clientId + '"]');
+      }
+      if (!menu) return;
+
+      if (!menu.dataset.portal) {
+        body.appendChild(menu);
+        menu.dataset.portal = '1';
+      }
+
+      if (openMenu === menu) {
+        closeOpenMenu();
+      } else {
+        closeOpenMenu();
+        openClientMenu(toggle, menu);
+      }
+      return;
+    }
+
+    if (openMenu && !openMenu.contains(e.target)) {
+      closeOpenMenu();
+    }
+  });
+
+  window.addEventListener('scroll', function() {
+    if (openMenu) closeOpenMenu();
+  }, true);
+
+  window.addEventListener('resize', function() {
+    if (openMenu) closeOpenMenu();
+  });
 });
 </script>
 {% endblock %}

@@ -11,25 +11,25 @@
       <form method="POST" action="{{ url_for('projects.edit_history', history_id=record.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-        <!-- Trạng thái mới -->
+        <!-- New status -->
         <div class="mb-3">
           <label class="form-label">{{ t('label_new_status') }}</label>
           <input type="text" name="new_status" class="form-control" value="{{ record.new_status }}" required>
         </div>
 
-        <!-- Tiến độ mới -->
+        <!-- New progress -->
         <div class="mb-3">
           <label class="form-label">{{ t('label_new_progress') }}</label>
           <input type="number" name="new_progress" class="form-control" min="0" max="100" value="{{ record.new_progress }}" required>
         </div>
 
-        <!-- Chi tiết -->
+        <!-- Details -->
         <div class="mb-3">
           <label class="form-label">{{ t('label_detail') }}</label>
           <textarea name="detail" class="form-control" rows="4">{{ record.detail }}</textarea>
         </div>
 
-        <!-- Nút thao tác -->
+        <!-- Action buttons -->
         <div class="text-end">
           <button type="submit" class="btn btn-primary">{{ t('btn_save') }}</button>
           <a href="{{ url_for('projects.project_detail', project_id=record.project_id) }}" class="btn btn-secondary">{{ t('btn_cancel') }}</a>

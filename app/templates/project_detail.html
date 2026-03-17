@@ -343,12 +343,12 @@
                               </div>
                           </form>
                       </li>
-                      {% if current_user.role in ['admin','manager'] or (current_user.role == 'quotation' and (tk.assignee and tk.assignee.id == current_user.id)) %}
+                      {% if current_user.role in ['admin','manager','leader'] or (current_user.role == 'quotation' and (tk.assignee and tk.assignee.id == current_user.id)) %}
                       <li><hr class="dropdown-divider"></li>
                       <li>
-                          <form method="POST" action="{{ url_for('tasks.delete_task', project_id=project.id, task_id=tk.id) }}">
+                          <form method="POST" action="{{ url_for('tasks.delete_task', project_id=project.id, task_id=tk.id) }}" data-confirm="{{ t('confirm_delete_task') }}">
                               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                              <button type="submit" class="dropdown-item text-danger" data-confirm="{{ t('confirm_delete_task') }}" onclick="return confirm(this.dataset.confirm);">
+                              <button type="submit" class="dropdown-item text-danger">
                                   <i class="fas fa-trash-alt me-2"></i>{{ t('btn_delete') }}
                               </button>
                           </form>
@@ -484,6 +484,7 @@
             hx-swap="outerHTML"
             hx-on::after-request="if(event.detail.successful) { this.reset(); bootstrap.Modal.getInstance(document.getElementById('addQuestionModal')).hide(); }">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="source" value="project_detail">
         <div class="modal-header">
           <h5 class="modal-title">{{ t('title_add_question_modal') }}</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

@@ -1,30 +1,30 @@
 {% extends "base.html" %}
-{% block title %}Xuất báo cáo{% endblock %}
+{% block title %}{{ t('title_export_report') }}{% endblock %}
 {% block content %}
 <div class="container mt-4 fade-in" style="max-width: 700px;">
-  <h1 class="page-title"><i class="fas fa-file-export text-primary me-2"></i>Xuất báo cáo dự án</h1>
+  <h1 class="page-title"><i class="fas fa-file-export text-primary me-2"></i>{{ t('heading_export_report') }}</h1>
 
   <form method="POST" action="{{ url_for('export_report') }}">
     <div class="mb-3">
-      <label class="form-label">Định dạng báo cáo</label>
+      <label class="form-label">{{ t('label_report_format') }}</label>
       <select name="format" class="form-select" required>
-        <option value="html_dashboard">Báo cáo Tổng quan (HTML/Print)</option>
-        <option value="excel">Excel (.xlsx)</option>
-        <option value="pdf">PDF (.pdf)</option>
+        <option value="html_dashboard">{{ t('opt_html_dashboard') }}</option>
+        <option value="excel">{{ t('opt_excel') }}</option>
+        <option value="pdf">{{ t('opt_pdf') }}</option>
       </select>
     </div>
 
     <div class="mb-3">
-      <label class="form-label">Phạm vi dữ liệu</label>
+      <label class="form-label">{{ t('label_data_scope') }}</label>
       <select name="scope" class="form-select" required>
-        <option value="all">Tất cả dự án</option>
-        <option value="active">Chỉ dự án đang hoạt động</option>
-        <option value="completed">Chỉ dự án đã hoàn thành</option>
+        <option value="all">{{ t('opt_scope_all') }}</option>
+        <option value="active">{{ t('opt_scope_active') }}</option>
+        <option value="completed">{{ t('opt_scope_completed') }}</option>
       </select>
     </div>
 
     <div class="mb-3">
-      <label class="form-label">Khoảng thời gian</label>
+      <label class="form-label">{{ t('label_time_range') }}</label>
       <div class="row">
         <div class="col">
           <input type="date" name="start_date" class="form-control">
@@ -33,12 +33,12 @@
           <input type="date" name="end_date" class="form-control">
         </div>
       </div>
-      <small class="text-muted">Nếu bỏ trống, hệ thống sẽ xuất toàn bộ dữ liệu.</small>
+      <small class="text-muted">{{ t('msg_export_all_if_empty') }}</small>
     </div>
 
     <div class="text-end">
-      <button type="submit" class="btn btn-primary">📤 Xuất báo cáo</button>
-      <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary">Hủy</a>
+      <button type="submit" class="btn btn-primary">📤 {{ t('btn_export_report') }}</button>
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary">{{ t('btn_cancel_text') }}</a>
     </div>
   </form>
 </div>

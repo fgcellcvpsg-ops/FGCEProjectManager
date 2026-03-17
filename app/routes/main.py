@@ -7,7 +7,8 @@ import os
 import platform
 import subprocess
 
-from ..models import Project, Client, History, User, ProjectOwner, CalendarNote, ProjectQuestion, get_projects_query, apply_project_filters
+from ..models import Project, Client, History, User, ProjectOwner, CalendarNote, ProjectQuestion
+from ..services import get_projects_query, apply_project_filters
 from ..extensions import db
 from ..utils import t, get_lang
 

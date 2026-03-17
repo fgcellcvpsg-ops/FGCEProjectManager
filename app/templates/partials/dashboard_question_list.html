@@ -2,11 +2,10 @@
     {% if questions %}
         {% for q in questions %}
          {% set creator_level = q.created_by.role_level if q.created_by else 0 %}
-         {% set can_answer = (current_user.id != q.created_by_id) and (current_user.role_level > creator_level) %}
          {% set creator_name = (q.created_by.display_name or q.created_by.username) if q.created_by else '?' %}
          {% set creator_initial = creator_name[0] | upper if creator_name else '?' %}
          {% set is_answered = q.answer is not none %}
-         {% set can_answer = current_user.role in ['admin', 'manager'] or ((current_user.id != q.created_by_id) and (current_user.role_level > creator_level)) %}
+         {% set can_answer = (current_user.id|int != q.created_by_id|int) and ((current_user.role_level >= 4) or (current_user.role_level > creator_level)) %}
                  <div class="content-list-item dashboard-question-item p-1 rounded-2 mb-1 {% if not is_answered %}border-start border-3 border-danger bg-white shadow-sm{% else %}bg-light border-start border-3 border-success bg-opacity-50{% endif %}">
                     <div class="d-flex justify-content-between align-items-start gap-2">
                         <div class="d-flex align-items-start gap-2 overflow-hidden flex-grow-1">
@@ -74,7 +73,7 @@
                     {% elif can_answer %}
                         <div class="collapse mt-1" id="replyForm-dashboard_card-{{ q.id }}">
                     <div class="card card-body bg-light border-0 p-3">
-                        <form hx-post="{{ url_for('projects.answer_question', question_id=q.id) }}" hx-target="#question-list-dashboard_card" hx-swap="outerHTML">
+                        <form method="POST" action="{{ url_for('projects.answer_question', question_id=q.id) }}" hx-post="{{ url_for('projects.answer_question', question_id=q.id) }}" hx-target="#question-list-dashboard_card" hx-swap="outerHTML">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="source" value="dashboard_card">
                             <div class="mb-2">

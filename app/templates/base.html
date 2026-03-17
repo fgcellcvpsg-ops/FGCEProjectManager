@@ -620,7 +620,7 @@
 
   <!-- Footer -->
   <footer>
-    © 2025 FG Consulting Engineers — Project management system
+    {{ t('footer_text') }}
   </footer>
 
   <!-- Bootstrap JS -->
@@ -687,7 +687,7 @@
           e.preventDefault();
           currentForm = form;
           currentMsg = form.getAttribute('data-confirm') || '';
-          textEl.textContent = currentMsg || 'Bạn có chắc chắn?';
+          textEl.textContent = currentMsg || '{{ t("confirm_delete") }}';
           okBtn.textContent = (currentMsg || '').includes('?') ? (currentMsg.split('?')[0]) : okBtn.textContent;
           bsModal.show();
         });

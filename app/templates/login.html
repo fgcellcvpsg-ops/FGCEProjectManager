@@ -22,14 +22,18 @@
         </div>
 
         <!-- Nút thao tác -->
-        <div class="d-grid">
+        <div class="d-grid gap-2">
           <button type="submit" class="btn btn-primary">🚀 {{ t('btn_login') }}</button>
         </div>
       </form>
+      
+      <div class="text-center mt-3">
+        <a href="{{ url_for('auth.reset_request') }}" class="text-decoration-none">{{ t('btn_forgot_password') }}</a>
+      </div>
 
       <hr class="my-3">
       <div class="text-center">
-        <small class="text-muted">© 2025 FG Consulting Engineers — Project management system</small>
+        <small class="text-muted">{{ t('footer_text') }}</small>
       </div>
     </div>
   </div>

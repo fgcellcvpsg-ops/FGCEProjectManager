@@ -2,25 +2,30 @@ import unittest
 import os
 import sys
 import uuid
+import tempfile
+import shutil
 from datetime import date, datetime
+from pathlib import Path
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import create_app, db
-from app.models import User, Client, Project, Task, History, WorkHistoryReport
+from app.models import User, Client, Project, Task, History, WorkHistoryReport, ProjectQuestion
 
 class TestSystemIntegration(unittest.TestCase):
     def setUp(self):
         # Unique DB for each test run to avoid lock issues
         self.db_filename = f'system_test_{uuid.uuid4().hex}.db'
-        self.db_path = os.path.join(os.getcwd(), self.db_filename)
+        self.temp_dir = Path(tempfile.mkdtemp(prefix='fgce_pm_tests_')).resolve()
+        self.db_path = str((self.temp_dir / self.db_filename).resolve())
+        self.db_uri_path = self.db_path.replace('\\', '/')
         
         class TestConfig:
             TESTING = True
             WTF_CSRF_ENABLED = False
             WTF_CSRF_CHECK_DEFAULT = False
-            SQLALCHEMY_DATABASE_URI = f'sqlite:///{self.db_path}'
+            SQLALCHEMY_DATABASE_URI = f"sqlite:///{self.db_uri_path}"
             SQLALCHEMY_TRACK_MODIFICATIONS = False
             SECRET_KEY = 'test-key'
 
@@ -59,10 +64,15 @@ class TestSystemIntegration(unittest.TestCase):
                 os.remove(self.db_path)
             except PermissionError:
                 print(f"Warning: Could not delete {self.db_path}")
+        if getattr(self, 'temp_dir', None) and self.temp_dir.exists():
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def login(self):
+        self.login_as(self.admin_id)
+
+    def login_as(self, user_id):
         with self.client.session_transaction() as sess:
-            sess['_user_id'] = str(self.admin_id)
+            sess['_user_id'] = str(user_id)
             sess['_fresh'] = True
 
     def test_01_authentication(self):
@@ -281,6 +291,344 @@ class TestSystemIntegration(unittest.TestCase):
         resp = self.client.get('/admin/work_history_report/export.csv')
         self.assertEqual(resp.status_code, 200)
         self.assertIn('text/csv', resp.headers.get('Content-Type', ''))
+
+    def test_05_project_question_answer(self):
+        self.login()
+
+        with self.app.app_context():
+            manager_1 = User(
+                username='manager_1',
+                email='manager_1@example.com',
+                role='manager',
+                is_allowed=True,
+                auth_type='manual',
+                display_name='Manager 1'
+            )
+            manager_1.set_password('123')
+            db.session.add(manager_1)
+
+            manager_2 = User(
+                username='manager_2',
+                email='manager_2@example.com',
+                role='manager',
+                is_allowed=True,
+                auth_type='manual',
+                display_name='Manager 2'
+            )
+            manager_2.set_password('123')
+            db.session.add(manager_2)
+
+            client = Client(name='QA Client', symbol='QAC')
+            db.session.add(client)
+            db.session.commit()
+
+            project = Project(
+                name='QA Project',
+                client_id=client.id,
+                po_number='77777777',
+                status='New',
+                progress=0,
+                owner_id=manager_1.id
+            )
+            db.session.add(project)
+            db.session.commit()
+            project_id = project.id
+            manager_1_id = manager_1.id
+            manager_2_id = manager_2.id
+
+        self.login_as(manager_1_id)
+        resp = self.client.post(f'/project/{project_id}/add_question', data={'question': 'Câu hỏi test'}, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+        with self.app.app_context():
+            q = ProjectQuestion.query.filter_by(project_id=project_id).first()
+            self.assertIsNotNone(q)
+            question_id = q.id
+
+        self.login_as(manager_2_id)
+        resp = self.client.post(f'/question/{question_id}/answer', data={'answer': 'Câu trả lời test'}, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+        with self.app.app_context():
+            q = db.session.get(ProjectQuestion, question_id)
+            self.assertEqual(q.answer, 'Câu trả lời test')
+            self.assertIsNotNone(q.answered_at)
+            self.assertEqual(q.answered_by_id, manager_2_id)
+
+    def test_06_leader_can_answer_project_question(self):
+        self.login()
+
+        with self.app.app_context():
+            leader_1 = User(
+                username='leader_1',
+                email='leader_1@example.com',
+                role='leader',
+                is_allowed=True,
+                auth_type='manual',
+                display_name='Leader 1'
+            )
+            leader_1.set_password('123')
+            db.session.add(leader_1)
+
+            leader_2 = User(
+                username='leader_2',
+                email='leader_2@example.com',
+                role='leader',
+                is_allowed=True,
+                auth_type='manual',
+                display_name='Leader 2'
+            )
+            leader_2.set_password('123')
+            db.session.add(leader_2)
+
+            client = Client(name='Leader QA Client', symbol='LQC')
+            db.session.add(client)
+            db.session.commit()
+
+            project = Project(
+                name='Leader QA Project',
+                client_id=client.id,
+                po_number='66666666',
+                status='New',
+                progress=0,
+                owner_id=leader_1.id
+            )
+            db.session.add(project)
+            db.session.commit()
+
+            project_id = project.id
+            leader_1_id = leader_1.id
+            leader_2_id = leader_2.id
+
+        self.login_as(leader_1_id)
+        resp = self.client.post(f'/project/{project_id}/add_question', data={'question': 'Câu hỏi leader'}, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+        with self.app.app_context():
+            q = ProjectQuestion.query.filter_by(project_id=project_id).first()
+            self.assertIsNotNone(q)
+            question_id = q.id
+
+        self.login_as(leader_2_id)
+        resp = self.client.post(f'/question/{question_id}/answer', data={'answer': 'Trả lời bởi leader'}, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+        with self.app.app_context():
+            q = db.session.get(ProjectQuestion, question_id)
+            self.assertEqual(q.answer, 'Trả lời bởi leader')
+            self.assertIsNotNone(q.answered_at)
+            self.assertEqual(q.answered_by_id, leader_2_id)
+
+    def test_07_add_question_htmx_keeps_target_id(self):
+        self.login()
+
+        with self.app.app_context():
+            client = Client(name='HTMX Client', symbol='HXC')
+            db.session.add(client)
+            db.session.commit()
+
+            project = Project(
+                name='HTMX Project',
+                client_id=client.id,
+                po_number='55555555',
+                status='New',
+                progress=0,
+                owner_id=self.admin_id
+            )
+            db.session.add(project)
+            db.session.commit()
+            project_id = project.id
+
+        self.login_as(self.admin_id)
+        resp = self.client.post(
+            f'/project/{project_id}/add_question',
+            data={'question': '', 'source': 'project_detail'},
+            headers={'HX-Request': 'true'},
+            follow_redirects=True
+        )
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode('utf-8')
+        self.assertIn('id="question-list-project_detail"', html)
+        self.assertNotIn('id="question-list-default"', html)
+
+    def test_08_dashboard_question_reply_visible_for_leader(self):
+        self.login()
+
+        with self.app.app_context():
+            leader_1 = User(
+                username='leader_dash_1',
+                email='leader_dash_1@example.com',
+                role='leader',
+                is_allowed=True,
+                auth_type='manual',
+                display_name='Leader Dash 1'
+            )
+            leader_1.set_password('123')
+            db.session.add(leader_1)
+
+            leader_2 = User(
+                username='leader_dash_2',
+                email='leader_dash_2@example.com',
+                role='leader',
+                is_allowed=True,
+                auth_type='manual',
+                display_name='Leader Dash 2'
+            )
+            leader_2.set_password('123')
+            db.session.add(leader_2)
+
+            client = Client(name='Dash Client', symbol='DSC')
+            db.session.add(client)
+            db.session.commit()
+
+            project = Project(
+                name='Dash Project',
+                client_id=client.id,
+                po_number='44444444',
+                status='New',
+                progress=0,
+                owner_id=leader_2.id
+            )
+            db.session.add(project)
+            db.session.commit()
+
+            q = ProjectQuestion(
+                project_id=project.id,
+                question='Câu hỏi dashboard',
+                created_by_id=leader_1.id
+            )
+            db.session.add(q)
+            db.session.commit()
+            question_id = q.id
+            leader_2_id = leader_2.id
+
+        self.login_as(leader_2_id)
+        resp = self.client.get('/', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode('utf-8')
+        self.assertIn(f'replyForm-dashboard_card-{question_id}', html)
+
+    def test_09_create_task_api_allows_primary_owner_only(self):
+        self.login()
+
+        with self.app.app_context():
+            client = Client(name='Task Client', symbol='TSC')
+            db.session.add(client)
+            db.session.commit()
+
+            project = Project(
+                name='Task API Project',
+                client_id=client.id,
+                po_number='33333333',
+                status='New',
+                progress=0,
+                owner_id=self.admin_id
+            )
+            db.session.add(project)
+            db.session.commit()
+            project_id = project.id
+
+        resp = self.client.post('/tasks', json={
+            'project_id': project_id,
+            'title': 'API Task 1',
+            'start_date': datetime.now().date().isoformat(),
+            'assignee_id': self.admin_id
+        })
+        self.assertEqual(resp.status_code, 201)
+        data = resp.get_json()
+        self.assertIsNotNone(data)
+        self.assertEqual(data.get('title'), 'API Task 1')
+
+        with self.app.app_context():
+            t = Task.query.filter_by(project_id=project_id).first()
+            self.assertIsNotNone(t)
+            self.assertEqual(t.name, 'API Task 1')
+
+    def test_10_password_reset_token_flow_updates_password(self):
+        with self.app.app_context():
+            u = User(
+                username='reset_user',
+                email='reset_user@example.com',
+                role='member',
+                is_allowed=True,
+                auth_type='manual',
+                display_name='Reset User'
+            )
+            u.set_password('oldpass')
+            db.session.add(u)
+            db.session.commit()
+            token = u.get_reset_token()
+            user_id = u.id
+
+        resp = self.client.post(
+            f'/reset_password/{token}',
+            data={'password': 'newpass123', 'confirm_password': 'newpass123'},
+            follow_redirects=True
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        with self.app.app_context():
+            u2 = db.session.get(User, user_id)
+            self.assertTrue(u2.check_password('newpass123'))
+
+    def test_11_project_detail_does_not_show_reply_for_own_question(self):
+        self.login()
+
+        with self.app.app_context():
+            client = Client(name='OwnQ Client', symbol='OQC')
+            db.session.add(client)
+            db.session.commit()
+
+            project = Project(
+                name='OwnQ Project',
+                client_id=client.id,
+                po_number='22222222',
+                status='New',
+                progress=0,
+                owner_id=self.admin_id
+            )
+            db.session.add(project)
+            db.session.commit()
+
+            q = ProjectQuestion(project_id=project.id, question='Câu hỏi của chính mình', created_by_id=self.admin_id)
+            db.session.add(q)
+            db.session.commit()
+            project_id = project.id
+            question_id = q.id
+
+        resp = self.client.get(f'/project/{project_id}', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode('utf-8')
+        self.assertNotIn(f'replyForm-project_detail-{question_id}', html)
+
+    def test_12_dashboard_does_not_show_reply_for_own_question(self):
+        self.login()
+
+        with self.app.app_context():
+            client = Client(name='OwnQ Dash Client', symbol='OQD')
+            db.session.add(client)
+            db.session.commit()
+
+            project = Project(
+                name='OwnQ Dash Project',
+                client_id=client.id,
+                po_number='11111111',
+                status='New',
+                progress=0,
+                owner_id=self.admin_id
+            )
+            db.session.add(project)
+            db.session.commit()
+
+            q = ProjectQuestion(project_id=project.id, question='Câu hỏi của admin', created_by_id=self.admin_id)
+            db.session.add(q)
+            db.session.commit()
+            question_id = q.id
+
+        resp = self.client.get('/', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode('utf-8')
+        self.assertNotIn(f'replyForm-dashboard_card-{question_id}', html)
 
 if __name__ == '__main__':
     unittest.main()

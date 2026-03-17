@@ -49,10 +49,10 @@ def backup_db():
     try:
         with zipfile.ZipFile(fp, 'w', zipfile.ZIP_DEFLATED) as z:
             z.write(db_path, arcname='projects.db')
-        flash(f"✅ Đã tạo backup: {name}", "success")
+        flash(t('msg_backup_created').format(name=name) if t('msg_backup_created') != 'msg_backup_created' else f"✅ Đã tạo backup: {name}", "success")
     except Exception as e:
         current_app.logger.exception("Backup failed: %s", e)
-        flash("❌ Tạo backup thất bại.", "danger")
+        flash(t('err_backup_create_failed') if t('err_backup_create_failed') != 'err_backup_create_failed' else "❌ Tạo backup thất bại.", "danger")
         
     return redirect(url_for('backup.list'))
 
@@ -93,10 +93,10 @@ def restore_backup(filename):
         # In app.py: db_path = os.path.join(app.instance_path, 'projects.db')
         # So z.extract overwrites it.
         
-        flash("♻️ Phục hồi thành công. Khởi động lại ứng dụng.", "success")
+        flash(t('msg_backup_restored') if t('msg_backup_restored') != 'msg_backup_restored' else "♻️ Phục hồi thành công. Khởi động lại ứng dụng.", "success")
     except Exception as e:
         current_app.logger.exception("Restore failed: %s", e)
-        flash("❌ Phục hồi thất bại.", "danger")
+        flash(t('err_backup_restore_failed') if t('err_backup_restore_failed') != 'err_backup_restore_failed' else "❌ Phục hồi thất bại.", "danger")
         
     return redirect(url_for('backup.list'))
 

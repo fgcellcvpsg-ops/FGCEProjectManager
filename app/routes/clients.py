@@ -85,5 +85,5 @@ def delete_client(client_id):
     except SQLAlchemyError as e:
         db.session.rollback()
         current_app.logger.exception("Lỗi khi xoá client %s: %s", client_id, e)
-        flash("❌ Lỗi khi xoá client.", "error")
+        flash(t('err_client_delete_failed') if t('err_client_delete_failed') != 'err_client_delete_failed' else "❌ Lỗi khi xoá client.", "danger")
     return redirect(url_for('clients.list_clients'))

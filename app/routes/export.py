@@ -4,7 +4,8 @@ from datetime import datetime
 from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import aliased, joinedload
 import io
-from ..models import Project, Client, History, get_projects_query, apply_project_filters
+from ..models import Project, Client, History
+from ..services import get_projects_query, apply_project_filters
 from ..utils import t, min_role_required
 from ..extensions import db
 from ..export_tools import generate_dashboard_pdf_weasy, generate_project_detail_pdf_weasy, build_report_filename
@@ -375,12 +376,12 @@ def export_report():
         return render_report()
     
     if fmt == 'excel':
-        flash('Tính năng xuất Excel đang được phát triển.', 'info')
+        flash(t('msg_feature_in_development') if t('msg_feature_in_development') != 'msg_feature_in_development' else 'Tính năng xuất Excel đang được phát triển.', 'info')
         return redirect(url_for('export.export_report'))
     
     if fmt == 'pdf':
-        flash('Tính năng xuất PDF đang được phát triển.', 'info')
+        flash(t('msg_feature_in_development') if t('msg_feature_in_development') != 'msg_feature_in_development' else 'Tính năng xuất PDF đang được phát triển.', 'info')
         return redirect(url_for('export.export_report'))
         
-    flash('Định dạng không hợp lệ.', 'warning')
+    flash(t('err_invalid_format') if t('err_invalid_format') != 'err_invalid_format' else 'Định dạng không hợp lệ.', 'warning')
     return redirect(url_for('export.export_report'))

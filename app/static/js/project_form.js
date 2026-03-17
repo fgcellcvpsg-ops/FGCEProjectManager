@@ -260,7 +260,8 @@
     if (INIT.mode === 'edit' && initialNameValue && nameVal !== initialNameValue) {
          // User changed the name (and it's different even after formatting)
          // User changed the name
-         const confirmChange = confirm("Bạn muốn thay đổi tên dự án?");
+         const msgConfirmName = (formEl && formEl.dataset.msgConfirmChangeName) ? formEl.dataset.msgConfirmChangeName : "Bạn muốn thay đổi tên dự án?";
+         const confirmChange = confirm(msgConfirmName);
          if (!confirmChange) {
              nameInput.value = initialNameValue; // Revert
              return;
@@ -269,7 +270,8 @@
          // Then check duplicate
          // "rồi so sánh nếu đặt tên mới giống tên đã trồn tại thì hiện thông báo"
          if (isNameDuplicate(nameVal)) {
-             const ok = confirm('Tên dự án này đã tồn tại trước đó. Bạn có chắc muốn đặt tên dự án này không?');
+             const msgNameExists = (formEl && formEl.dataset.msgNameExists) ? formEl.dataset.msgNameExists : "Tên dự án này đã tồn tại trước đó. Bạn có chắc muốn đặt tên dự án này không?";
+             const ok = confirm(msgNameExists);
              if (!ok) {
                  // Revert to initial or clear? 
                  // User said "hiện thông báo", implying if they say No, we revert/clear.
@@ -281,7 +283,8 @@
     } else if (INIT.mode === 'add' || !initialNameValue) {
         // Add mode or empty initial: just check duplicate
         if (isNameDuplicate(nameVal)) {
-             const ok = confirm('Tên dự án này đã tồn tại trước đó. Bạn có chắc muốn đặt tên dự án này không?');
+             const msgNameExists = (formEl && formEl.dataset.msgNameExists) ? formEl.dataset.msgNameExists : "Tên dự án này đã tồn tại trước đó. Bạn có chắc muốn đặt tên dự án này không?";
+             const ok = confirm(msgNameExists);
              if (!ok) {
                  nameInput.value = '';
                  nameInput.focus();
@@ -299,7 +302,8 @@
     // Add Placeholder Option
     const placeholder = document.createElement('option');
     placeholder.value = "";
-    placeholder.textContent = "Hãy chọn tiến độ";
+    const msgChooseProgress = (formEl && formEl.dataset.msgChooseProgress) ? formEl.dataset.msgChooseProgress : "Hãy chọn tiến độ";
+    placeholder.textContent = msgChooseProgress;
     placeholder.disabled = true;
     placeholder.selected = true; // Default to placeholder
     progressSelect.appendChild(placeholder);
@@ -388,7 +392,8 @@
         const poVal = poInput.value;
         if (clientId && isPoDuplicateForClient(clientId, poVal, ownerId)) {
           e.preventDefault();
-          alert('Project number đã tồn tại cho client này. Vui lòng nhập số khác trước khi lưu.');
+          const msgPoExistsBeforeSave = (formEl && formEl.dataset.msgPoExists) ? formEl.dataset.msgPoExists : 'Project number đã tồn tại cho client này. Vui lòng nhập số khác trước khi lưu.';
+          alert(msgPoExistsBeforeSave);
           poInput.focus();
           return false;
         }

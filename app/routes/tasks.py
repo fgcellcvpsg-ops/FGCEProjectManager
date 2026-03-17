@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, current_app, abort
 from flask_login import login_required, current_user
 from app.extensions import db
-from app.models import Task, Project, User, get_projects_query
+from app.models import Task, Project, User
+from app.services import get_projects_query
 from app.utils import t, get_lang, TRANSLATIONS, log_activity
 
 tasks_bp = Blueprint('tasks', __name__)
@@ -24,7 +25,7 @@ def create_task():
          return jsonify({'error': 'Project not found or access denied'}), 404
          
     # Requirement: Cannot assign task if project has no owners
-    if not project.owners:
+    if (not getattr(project, 'owner_id', None)) and (not project.owners):
          return jsonify({'error': 'Dự án chưa có người phụ trách, không thể giao việc.'}), 400
 
     assignee_id = (int(data['assignee_id']) if data.get('assignee_id') else None)
@@ -56,7 +57,7 @@ def create_task():
 def create_task_form(project_id):
     # Permission check: Secretary and Quotation cannot create tasks
     if current_user.role in ['secretary', 'quotation']:
-        flash("❌ Bạn không có quyền thêm công việc.", "danger")
+        flash(t('err_create_task_denied') if t('err_create_task_denied') != 'err_create_task_denied' else "❌ Bạn không có quyền thêm công việc.", "danger")
         return redirect(url_for('projects.project_detail', project_id=project_id))
 
     # Enforce role-based access control
@@ -66,12 +67,12 @@ def create_task_form(project_id):
     
     name = request.form.get('name')
     if not name:
-        flash("Vui lòng nhập tên công việc.", "warning")
+        flash(t('err_task_name_required') if t('err_task_name_required') != 'err_task_name_required' else "Vui lòng nhập tên công việc.", "warning")
         return redirect(url_for('projects.project_detail', project_id=project_id))
 
     deadline_str = request.form.get('deadline')
     if not deadline_str:
-        flash("Vui lòng chọn ngày hoàn thành (Due Date).", "warning")
+        flash(t('err_task_deadline_required') if t('err_task_deadline_required') != 'err_task_deadline_required' else "Vui lòng chọn ngày hoàn thành (Due Date).", "warning")
         return redirect(url_for('projects.project_detail', project_id=project_id, draft_task_name=name))
         
     deadline = None
@@ -118,7 +119,7 @@ def create_task_form(project_id):
 def create_task_page(project_id):
     # Permission check: Secretary and Quotation cannot create tasks
     if current_user.role in ['secretary', 'quotation']:
-        flash("❌ Bạn không có quyền thêm công việc.", "danger")
+        flash(t('err_create_task_denied') if t('err_create_task_denied') != 'err_create_task_denied' else "❌ Bạn không có quyền thêm công việc.", "danger")
         return redirect(url_for('projects.project_detail', project_id=project_id))
 
     # Enforce role-based access control
@@ -136,18 +137,18 @@ def create_task_page(project_id):
         project = db.session.get(Project, project_id)
         name = (request.form.get('name') or '').strip()
         if not name:
-            flash("Tên công việc không được để trống.", "warning")
+            flash(t('err_task_name_required') if t('err_task_name_required') != 'err_task_name_required' else "Tên công việc không được để trống.", "warning")
             return redirect(url_for('tasks.create_task_page', project_id=project_id))
 
         deadline_str = request.form.get('deadline')
         if not deadline_str:
-            flash("Vui lòng chọn ngày hoàn thành (Due Date).", "warning")
+            flash(t('err_task_deadline_required') if t('err_task_deadline_required') != 'err_task_deadline_required' else "Vui lòng chọn ngày hoàn thành (Due Date).", "warning")
             return redirect(url_for('tasks.create_task_page', project_id=project_id))
         deadline = None
         try:
             deadline = datetime.fromisoformat(deadline_str).date()
         except ValueError:
-            flash("Ngày hoàn thành không hợp lệ.", "warning")
+            flash(t('err_task_deadline_invalid') if t('err_task_deadline_invalid') != 'err_task_deadline_invalid' else "Ngày hoàn thành không hợp lệ.", "warning")
             return redirect(url_for('tasks.create_task_page', project_id=project_id))
 
         assignee_id = request.form.get('assignee')
@@ -239,7 +240,7 @@ def patch_task(task_id):
 def edit_task(project_id, task_id):
     # Permission check: Secretary and Quotation cannot edit tasks
     if current_user.role in ['secretary', 'quotation']:
-        flash("❌ Bạn không có quyền chỉnh sửa công việc.", "danger")
+        flash(t('err_edit_task_denied') if t('err_edit_task_denied') != 'err_edit_task_denied' else "❌ Bạn không có quyền chỉnh sửa công việc.", "danger")
         return redirect(url_for('projects.project_detail', project_id=project_id))
 
     # Enforce role-based access control
@@ -264,7 +265,7 @@ def edit_task(project_id, task_id):
         if can_edit_details:
             name = request.form.get('name')
             if not name:
-                 flash("Tên công việc không được để trống.", "warning")
+                 flash(t('err_task_name_required') if t('err_task_name_required') != 'err_task_name_required' else "Tên công việc không được để trống.", "warning")
                  return redirect(url_for('tasks.edit_task', project_id=project_id, task_id=task_id))
             task.name = name
             
@@ -355,7 +356,7 @@ def edit_task_status(project_id, task_id):
             project.spent_hours = (project.spent_hours or 0.0) + delta_spent
 
         if task.status != 'Done' and status == 'Done':
-            flash("Công việc đã hoàn thành. Vui lòng cập nhật TRẠNG THÁI và TIẾN ĐỘ dự án!", "warning")
+            flash(t('msg_task_done_reminder') if t('msg_task_done_reminder') != 'msg_task_done_reminder' else "Công việc đã hoàn thành. Vui lòng cập nhật TRẠNG THÁI và TIẾN ĐỘ dự án!", "warning")
             redirect_url = url_for('projects.project_detail', project_id=project_id, task_completed=1)
 
         task.status = status
@@ -364,7 +365,7 @@ def edit_task_status(project_id, task_id):
             log_activity('UPDATE_TASK_STATUS', details=f'Changed task {task.name} status {old_status} -> {status} in project {task.project.name}')
         flash(t('task_updated_success') if 'task_updated_success' in TRANSLATIONS[get_lang()] else "Cập nhật công việc thành công.", "success")
     else:
-        flash("Trạng thái không hợp lệ.", "warning")
+        flash(t('err_status_invalid') if t('err_status_invalid') != 'err_status_invalid' else "Trạng thái không hợp lệ.", "warning")
     return redirect(redirect_url)
 
 @tasks_bp.route('/project/<int:project_id>/task/<int:task_id>/delete', methods=['POST'])
@@ -372,7 +373,7 @@ def edit_task_status(project_id, task_id):
 def delete_task(project_id, task_id):
     # Permission check: Secretary and Quotation cannot delete tasks
     if current_user.role in ['secretary', 'quotation']:
-         flash("❌ Bạn không có quyền xóa công việc.", "danger")
+         flash(t('err_delete_task_denied') if t('err_delete_task_denied') != 'err_delete_task_denied' else "❌ Bạn không có quyền xóa công việc.", "danger")
          return redirect(url_for('projects.project_detail', project_id=project_id))
 
     project = db.session.get(Project, project_id)

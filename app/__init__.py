@@ -1,9 +1,10 @@
 import os
 import logging
 from datetime import date, timedelta
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, url_for, flash, make_response
+from flask_wtf.csrf import CSRFError
 from sqlalchemy import inspect
-from app.extensions import db, login_manager, migrate, csrf, oauth, limiter
+from app.extensions import db, login_manager, migrate, csrf, oauth, limiter, mail
 from app.models import User, Project, Client, History, Task, ProjectOwner, ActivityLog, WorkHistoryReport
 from app.utils import t, get_lang, format_date, project_title, format_code, TRANSLATIONS
 
@@ -12,6 +13,14 @@ def create_app(config_class=None):
     
     # Configuration
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or 'dev-secret-key'
+    
+    # Mail Configuration
+    app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+    app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+    app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'true').lower() == 'true'
+    app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+    app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+    app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', os.getenv('MAIL_USERNAME'))
     
     # Security: Cookie Configuration
     # Only enable Secure cookies if explicitly set or if not in debug mode (assuming prod usually has https)
@@ -50,6 +59,7 @@ def create_app(config_class=None):
     migrate.init_app(app, db)
     csrf.init_app(app)
     limiter.init_app(app)
+    mail.init_app(app)
     # oauth.init_app(app) # Configure OAuth if needed
 
     # User loader
@@ -78,6 +88,15 @@ def create_app(config_class=None):
     app.jinja_env.filters['format_code'] = format_code
     app.jinja_env.filters['format_date'] = format_date
 
+    # Handle Unauthorized (401) for HTMX
+    @login_manager.unauthorized_handler
+    def handle_unauthorized():
+        if request.headers.get('HX-Request'):
+            resp = make_response('', 204)
+            resp.headers['HX-Redirect'] = url_for('auth.login', next=request.url)
+            return resp
+        return redirect(url_for('auth.login', next=request.url))
+
     # Register Blueprints
     from app.routes.auth import auth_bp
     from app.routes.main import main_bp
@@ -98,18 +117,54 @@ def create_app(config_class=None):
     app.register_blueprint(export_bp)
 
     # Error handlers
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        app.logger.warning("CSRF Error: %s", getattr(e, 'description', str(e)))
+        flash(t('err_csrf_expired') if t('err_csrf_expired') != 'err_csrf_expired' else "Phiên làm việc đã hết hạn hoặc token không hợp lệ. Vui lòng tải lại trang và thử lại.", "warning")
+        target = request.referrer or url_for('main.dashboard')
+        if request.headers.get('HX-Request'):
+            resp = make_response('', 204)
+            resp.headers['HX-Redirect'] = target
+            return resp
+        return redirect(target)
+
     @app.errorhandler(400)
     def handle_bad_request(e):
         app.logger.warning("400 Bad Request: %s", getattr(e, 'description', str(e)))
+        if request.headers.get('HX-Request'):
+            flash(t('err_bad_request').format(desc=getattr(e, 'description', 'Bad Request')) if t('err_bad_request') != 'err_bad_request' else f"Yêu cầu không hợp lệ: {getattr(e, 'description', 'Bad Request')}", "warning")
+            resp = make_response('', 204)
+            resp.headers['HX-Redirect'] = request.referrer or url_for('main.dashboard')
+            return resp
         return render_template('400.html', message=getattr(e, 'description', 'Bad Request')), 400
+
+    @app.errorhandler(403)
+    def handle_forbidden(e):
+        app.logger.warning("403 Forbidden: %s", getattr(e, 'description', str(e)))
+        if request.headers.get('HX-Request'):
+            flash(t('err_forbidden') if t('err_forbidden') != 'err_forbidden' else "Bạn không có quyền thực hiện thao tác này.", "danger")
+            resp = make_response('', 204)
+            resp.headers['HX-Redirect'] = request.referrer or url_for('main.dashboard')
+            return resp
+        return render_template('403.html'), 403
 
     @app.errorhandler(404)
     def handle_not_found(e):
+        if request.headers.get('HX-Request'):
+            flash(t('err_not_found') if t('err_not_found') != 'err_not_found' else "Không tìm thấy tài nguyên yêu cầu.", "warning")
+            resp = make_response('', 204)
+            resp.headers['HX-Redirect'] = request.referrer or url_for('main.dashboard')
+            return resp
         return render_template('404.html'), 404
 
     @app.errorhandler(500)
     def handle_server_error(e):
         app.logger.error("500 Server Error: %s", e)
+        if request.headers.get('HX-Request'):
+            flash(t('err_server_error') if t('err_server_error') != 'err_server_error' else "Đã xảy ra lỗi máy chủ nội bộ. Vui lòng thử lại sau.", "danger")
+            resp = make_response('', 204)
+            resp.headers['HX-Redirect'] = request.referrer or url_for('main.dashboard')
+            return resp
         return render_template('500.html', error=e), 500
 
     # Create indexes on startup (optional, or move to a command)

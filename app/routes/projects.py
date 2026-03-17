@@ -3,13 +3,14 @@ import io
 import platform
 import subprocess
 from datetime import date, datetime, timedelta, timezone
-from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, send_file, jsonify, abort
+from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, send_file, jsonify, abort, make_response
 from flask_login import login_required, current_user
 from sqlalchemy import or_, and_, func, extract, case
 from sqlalchemy.orm import joinedload, aliased
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from app.extensions import db
-from app.models import Project, Client, User, ProjectOwner, History, Task, CalendarNote, ProjectQuestion, get_projects_query, apply_project_filters
+from app.models import Project, Client, User, ProjectOwner, History, Task, CalendarNote, ProjectQuestion
+from app.services import get_projects_query, apply_project_filters
 from app.utils import min_role_required, t, get_lang, log_activity
 
 # Try importing weasyprint, handle if missing
@@ -459,40 +460,40 @@ def add_project():
         # Permission check: Quotation role can ONLY create quotation projects
         if current_user.role == 'quotation':
             if not (status.startswith('Quotation') or status == 'Quotation'):
-                 flash("❌ Bạn chỉ có quyền tạo dự án Báo giá (Quotation).", "danger")
+                 flash(t('err_quotation_create_only') if t('err_quotation_create_only') != 'err_quotation_create_only' else "❌ Bạn chỉ có quyền tạo dự án Báo giá (Quotation).", "danger")
                  return redirect(url_for('projects.list', status='Quotation'))
 
         # server-side required checks
         errors = []
         if not name:
-            errors.append("Vui lòng nhập tên dự án.")
+            errors.append(t('err_project_name_required') if t('err_project_name_required') != 'err_project_name_required' else "Vui lòng nhập tên dự án.")
         else:
             # Auto-format to Title Case (Python's .title() handles underscores correctly)
             name = name.title()
 
         if not client_id_raw:
-            errors.append("Vui lòng chọn Client.")
+            errors.append(t('err_client_required') if t('err_client_required') != 'err_client_required' else "Vui lòng chọn Client.")
             
         if project_type == 'FGC' and not (status.startswith('Quotation') or status == 'Quotation'):
              if not po_number:
-                 errors.append("Vui lòng nhập Project number.")
+                 errors.append(t('err_po_number_required') if t('err_po_number_required') != 'err_po_number_required' else "Vui lòng nhập Project number.")
              elif not po_number.isdigit() or len(po_number) != 8:
-                 errors.append("Project number phải gồm đúng 8 chữ số.")
+                 errors.append(t('err_po_number_format') if t('err_po_number_format') != 'err_po_number_format' else "Project number phải gồm đúng 8 chữ số.")
         # PEI: No validation
         
         if not address:
-            errors.append("Vui lòng nhập địa chỉ.")
+            errors.append(t('err_address_required') if t('err_address_required') != 'err_address_required' else "Vui lòng nhập địa chỉ.")
         if not deadline_raw:
-            errors.append("Vui lòng chọn deadline.")
+            errors.append(t('err_deadline_required') if t('err_deadline_required') != 'err_deadline_required' else "Vui lòng chọn deadline.")
         if not scope:
-            errors.append("Vui lòng mô tả phạm vi công việc.")
+            errors.append(t('err_scope_required') if t('err_scope_required') != 'err_scope_required' else "Vui lòng mô tả phạm vi công việc.")
 
         client_id = None
         owner_id = None
         try:
             client_id = int(client_id_raw) if client_id_raw else None
         except (TypeError, ValueError):
-            errors.append("Client không hợp lệ.")
+            errors.append(t('err_client_invalid') if t('err_client_invalid') != 'err_client_invalid' else "Client không hợp lệ.")
         try:
             owner_id = int(owner_id_raw) if owner_id_raw else None
         except (TypeError, ValueError):
@@ -503,11 +504,11 @@ def add_project():
             try:
                 deadline = date.fromisoformat(deadline_raw)
             except ValueError:
-                errors.append("Định dạng deadline không hợp lệ.")
+                errors.append(t('err_deadline_format') if t('err_deadline_format') != 'err_deadline_format' else "Định dạng deadline không hợp lệ.")
             else:
                 # server-side: deadline không được trước hôm nay
                 if deadline < date.today():
-                    errors.append("Deadline không được trước hôm nay.")
+                    errors.append(t('err_deadline_past') if t('err_deadline_past') != 'err_deadline_past' else "Deadline không được trước hôm nay.")
 
         if errors:
             for msg in errors:
@@ -576,7 +577,7 @@ def add_project():
         except IntegrityError as e:
             db.session.rollback()
             current_app.logger.warning("IntegrityError when creating project: %s", e)
-            flash("Project number đã tồn tại cho client này hoặc dữ liệu không hợp lệ. Vui lòng kiểm tra lại.", "warning")
+            flash(t('err_project_exists') if t('err_project_exists') != 'err_project_exists' else "Project number đã tồn tại cho client này hoặc dữ liệu không hợp lệ. Vui lòng kiểm tra lại.", "warning")
             clients = Client.query.order_by(Client.name).all()
             users = User.query.filter(User.role.in_(['leader', 'member'])).order_by(User.display_name).all()
             projects_json = get_projects_json()
@@ -588,12 +589,12 @@ def add_project():
                                    project=None,
                                    projects_json=projects_json,
                                    form_values=request.form)
-        flash("✅ Dự án đã được tạo.", "success")
+        flash(t('msg_project_created') if t('msg_project_created') != 'msg_project_created' else "✅ Dự án đã được tạo.", "success")
         return redirect(url_for('main.dashboard'))
     except SQLAlchemyError as e:
         db.session.rollback()
         current_app.logger.exception("Lỗi khi tạo project: %s", e)
-        flash("❌ Lỗi khi tạo dự án. Vui lòng thử lại.", "danger")
+        flash(t('err_project_create_failed') if t('err_project_create_failed') != 'err_project_create_failed' else "❌ Lỗi khi tạo dự án. Vui lòng thử lại.", "danger")
         return render_template('project_form.html', mode='add', form_action=url_for('projects.add_project'),
                                clients=Client.query.order_by(Client.name).all(),
                                users=(User.query.filter(User.role != 'admin').order_by(User.display_name).all() if current_user.role == 'manager' else User.query.order_by(User.display_name).all()),
@@ -610,13 +611,13 @@ def edit_project(project_id):
     # Permission check: Quotation role can ONLY edit quotation projects
     if current_user.role == 'quotation':
         if not (project.status and (project.status.startswith('Quotation') or project.status.startswith('Quoting'))):
-             flash("❌ Bạn chỉ có quyền chỉnh sửa dự án Báo giá (Quotation).", "danger")
+             flash(t('err_quotation_edit_only') if t('err_quotation_edit_only') != 'err_quotation_edit_only' else "❌ Bạn chỉ có quyền chỉnh sửa dự án Báo giá (Quotation).", "danger")
              return redirect(url_for('projects.project_detail', project_id=project.id))
 
     # Permission check: Secretary role can ONLY edit quotation projects
     if current_user.role == 'secretary':
         if not (project.status and (project.status.startswith('Quotation') or project.status.startswith('Quoting'))):
-             flash("❌ Secretary chỉ có quyền chỉnh sửa dự án Báo giá (Quotation).", "danger")
+             flash(t('err_secretary_edit_only') if t('err_secretary_edit_only') != 'err_secretary_edit_only' else "❌ Secretary chỉ có quyền chỉnh sửa dự án Báo giá (Quotation).", "danger")
              return redirect(url_for('projects.project_detail', project_id=project.id))
 
     if request.method == 'GET':
@@ -671,31 +672,31 @@ def edit_project(project_id):
              pass 
 
         if not name:
-            errors.append("Vui lòng nhập tên dự án.")
+            errors.append(t('err_project_name_required') if t('err_project_name_required') != 'err_project_name_required' else "Vui lòng nhập tên dự án.")
         else:
             # Auto-format
             name = name.title()
 
         if not client_id_raw:
-            errors.append("Vui lòng chọn Client.")
+            errors.append(t('err_client_required') if t('err_client_required') != 'err_client_required' else "Vui lòng chọn Client.")
         
         # PO Number Validation
         if project_type == 'FGC':
              # Strict check for FGC
              if not po_number:
-                 errors.append("Vui lòng nhập Project number cho dự án FGC.")
+                 errors.append(t('err_po_number_required') if t('err_po_number_required') != 'err_po_number_required' else "Vui lòng nhập Project number cho dự án FGC.")
              elif not po_number.isdigit() or len(po_number) != 8:
                  # If value hasn't changed, allow it (legacy support)
                  if po_number != project.po_number:
-                     errors.append("Project number phải gồm đúng 8 chữ số.")
+                     errors.append(t('err_po_number_format') if t('err_po_number_format') != 'err_po_number_format' else "Project number phải gồm đúng 8 chữ số.")
         # PEI: No validation needed for PO Number (it will be None)
         
         if not address:
-            errors.append("Vui lòng nhập địa chỉ.")
+            errors.append(t('err_address_required') if t('err_address_required') != 'err_address_required' else "Vui lòng nhập địa chỉ.")
         if not deadline_raw:
-            errors.append("Vui lòng chọn deadline.")
+            errors.append(t('err_deadline_required') if t('err_deadline_required') != 'err_deadline_required' else "Vui lòng chọn deadline.")
         if not scope:
-            errors.append("Vui lòng mô tả phạm vi công việc.")
+            errors.append(t('err_scope_required') if t('err_scope_required') != 'err_scope_required' else "Vui lòng mô tả phạm vi công việc.")
 
         # Check constraint: Cannot update progress if no owner is assigned (or will be assigned)
         will_have_owners = False
@@ -712,7 +713,7 @@ def edit_project(project_id):
             new_progress = project.progress
             
         if new_progress != project.progress and not will_have_owners:
-            errors.append("Vui lòng chọn người phụ trách trước khi cập nhật tiến độ.")
+            errors.append(t('err_progress_owner_required') if t('err_progress_owner_required') != 'err_progress_owner_required' else "Vui lòng chọn người phụ trách trước khi cập nhật tiến độ.")
 
         # Check unfinished tasks if trying to complete/close or set 100%
         unfinished_tasks_count = Task.query.filter(
@@ -722,7 +723,7 @@ def edit_project(project_id):
         if unfinished_tasks_count > 0:
             target_status = status or project.status
             if target_status in ['Completed', 'Close'] or new_progress == 100:
-                errors.append("Dự án còn công việc chưa hoàn thành, không thể cập nhật trạng thái Hoàn thành (100%).")
+                errors.append(t('err_unfinished_tasks') if t('err_unfinished_tasks') != 'err_unfinished_tasks' else "Dự án còn công việc chưa hoàn thành, không thể cập nhật trạng thái Hoàn thành (100%).")
 
         if errors:
             for msg in errors:
@@ -744,11 +745,11 @@ def edit_project(project_id):
             try:
                 deadline = date.fromisoformat(deadline_raw)
             except ValueError:
-                flash("Định dạng deadline không hợp lệ.", "warning")
+                flash(t('err_deadline_format') if t('err_deadline_format') != 'err_deadline_format' else "Định dạng deadline không hợp lệ.", "warning")
                 return redirect(url_for('projects.edit_project', project_id=project.id))
             else:
                 if deadline < date.today():
-                    flash("Deadline không được trước hôm nay.", "warning")
+                    flash(t('err_deadline_past') if t('err_deadline_past') != 'err_deadline_past' else "Deadline không được trước hôm nay.", "warning")
                     return redirect(url_for('projects.edit_project', project_id=project.id))
 
         # apply changes
@@ -803,14 +804,14 @@ def edit_project(project_id):
         except IntegrityError as e:
             db.session.rollback()
             current_app.logger.warning("IntegrityError when updating project %s: %s", project_id, e)
-            flash("Project number đã tồn tại cho client này hoặc dữ liệu không hợp lệ. Vui lòng kiểm tra lại.", "warning")
+            flash(t('err_project_exists') if t('err_project_exists') != 'err_project_exists' else "Project number đã tồn tại cho client này hoặc dữ liệu không hợp lệ. Vui lòng kiểm tra lại.", "warning")
             return redirect(url_for('projects.edit_project', project_id=project.id))
-        flash("✅ Cập nhật dự án thành công.", "success")
+        flash(t('msg_project_updated') if t('msg_project_updated') != 'msg_project_updated' else "✅ Cập nhật dự án thành công.", "success")
         return redirect(url_for('projects.project_detail', project_id=project.id))
     except SQLAlchemyError as e:
         db.session.rollback()
         current_app.logger.exception("Lỗi khi cập nhật project: %s", e)
-        flash("❌ Lỗi khi cập nhật dự án. Vui lòng thử lại.", "danger")
+        flash(t('err_project_update_failed') if t('err_project_update_failed') != 'err_project_update_failed' else "❌ Lỗi khi cập nhật dự án. Vui lòng thử lại.", "danger")
         return redirect(url_for('projects.edit_project', project_id=project.id))
 
 @projects_bp.route('/delete_project/<int:project_id>', methods=['POST'])
@@ -826,11 +827,11 @@ def delete_project(project_id):
         db.session.delete(project)
         db.session.commit()
         log_activity('DELETE_PROJECT', details=f'Deleted project {project.name}')
-        flash(f"🗑️ Dự án '{project.name}' đã được xóa.", "success")
+        flash(t('msg_project_deleted').format(name=project.name) if t('msg_project_deleted') != 'msg_project_deleted' else f"🗑️ Dự án '{project.name}' đã được xóa.", "success")
     except SQLAlchemyError as e:
         db.session.rollback()
         current_app.logger.exception("Lỗi khi xoá dự án %s: %s", project_id, e)
-        flash("❌ Lỗi khi xoá dự án.", "error")
+        flash(t('err_project_delete_failed') if t('err_project_delete_failed') != 'err_project_delete_failed' else "❌ Lỗi khi xoá dự án.", "danger")
     return redirect(url_for('main.dashboard'))
 
 @projects_bp.route('/update_progress/<int:project_id>', methods=['POST'])
@@ -864,23 +865,23 @@ def update_progress(project_id):
             
     if current_user.role == 'quotation':
         if not (project.status.startswith('Quotation') or project.status.startswith('Quoting')):
-             flash("❌ Bạn chỉ có quyền cập nhật dự án Báo giá.", "danger")
+             flash(t('err_quotation_update_only') if t('err_quotation_update_only') != 'err_quotation_update_only' else "❌ Bạn chỉ có quyền cập nhật dự án Báo giá.", "danger")
              return redirect(url_for('projects.project_detail', project_id=project_id))
     elif current_user.role == 'secretary':
         is_quotation = project.status and (project.status.startswith('Quotation') or project.status.startswith('Quoting'))
         if not is_quotation:
              # Regular project: Can only update to 'Close' (or keep current)
              if req_status and req_status != 'Close' and req_status != project.status:
-                  flash("❌ Secretary chỉ có quyền cập nhật trạng thái thành Close cho dự án thường.", "danger")
+                  flash(t('err_secretary_close_only') if t('err_secretary_close_only') != 'err_secretary_close_only' else "❌ Secretary chỉ có quyền cập nhật trạng thái thành Close cho dự án thường.", "danger")
                   return redirect(url_for('projects.project_detail', project_id=project_id))
              # Prevent progress change if not closing
              if req_status != 'Close' and new_progress != project.progress:
-                  flash("❌ Secretary không có quyền thay đổi tiến độ dự án thường.", "danger")
+                  flash(t('err_secretary_progress_denied') if t('err_secretary_progress_denied') != 'err_secretary_progress_denied' else "❌ Secretary không có quyền thay đổi tiến độ dự án thường.", "danger")
                   return redirect(url_for('projects.project_detail', project_id=project_id))
                   
     elif current_user.role in ['leader', 'member']:
         if new_progress < project.progress:
-            flash("❌ Bạn không có quyền cập nhật lùi tiến độ dự án.", "danger")
+            flash(t('err_progress_decrease_denied') if t('err_progress_decrease_denied') != 'err_progress_decrease_denied' else "❌ Bạn không có quyền cập nhật lùi tiến độ dự án.", "danger")
             return redirect(url_for('projects.project_detail', project_id=project_id))
 
     # Check unfinished tasks
@@ -889,7 +890,7 @@ def update_progress(project_id):
         req_status = request.form.get('status')
         target_status = req_status if req_status else project.status
         if target_status == 'Completed' or new_progress == 100:
-             flash("❌ Dự án còn công việc chưa hoàn thành, không thể cập nhật trạng thái Hoàn thành (100%).", "warning")
+             flash(t('err_unfinished_tasks') if t('err_unfinished_tasks') != 'err_unfinished_tasks' else "❌ Dự án còn công việc chưa hoàn thành, không thể cập nhật trạng thái Hoàn thành (100%).", "warning")
              return redirect(url_for('projects.project_detail', project_id=project_id))
 
     old_status, old_progress = project.status, project.progress
@@ -902,7 +903,7 @@ def update_progress(project_id):
         if req_status == 'Quotation - Submitted':
             project.status = 'New'
             new_progress = 0
-            flash("🎉 Báo giá đã được gửi! Dự án đã được chuyển sang trạng thái 'New' và sẵn sàng bắt đầu.", "success")
+            flash(t('msg_quotation_submitted') if t('msg_quotation_submitted') != 'msg_quotation_submitted' else "🎉 Báo giá đã được gửi! Dự án đã được chuyển sang trạng thái 'New' và sẵn sàng bắt đầu.", "success")
         else:
             project.status = req_status
     
@@ -923,7 +924,7 @@ def update_progress(project_id):
     )
     db.session.add(history)
     db.session.commit()
-    flash("✅ Tiến độ đã được cập nhật.", "success")
+    flash(t('msg_progress_updated') if t('msg_progress_updated') != 'msg_progress_updated' else "✅ Tiến độ đã được cập nhật.", "success")
     return redirect(url_for('projects.project_detail', project_id=project_id))
 
 @projects_bp.route('/project/<int:project_id>/update_status', methods=['POST'])
@@ -959,7 +960,7 @@ def update_project_status(project_id):
     if status == 'Quotation - Submitted':
         project.status = 'New'
         progress = 0
-        flash("🎉 Báo giá đã được gửi! Dự án đã được chuyển sang trạng thái 'New' và sẵn sàng bắt đầu.", "success")
+        flash(t('msg_quotation_submitted') if t('msg_quotation_submitted') != 'msg_quotation_submitted' else "🎉 Báo giá đã được gửi! Dự án đã được chuyển sang trạng thái 'New' và sẵn sàng bắt đầu.", "success")
     elif status == 'New':
         progress = 0
     elif status == 'In Progress':
@@ -973,7 +974,7 @@ def update_project_status(project_id):
     # Check 1: If project is closed, only Admin/Manager can reopen
     if project.status == 'Close' and status != 'Close':
         if current_user.role not in ['admin', 'manager']:
-            flash("❌ Chỉ Admin hoặc Manager mới có thể mở lại dự án đã đóng (Closed).", "danger")
+            flash(t('err_reopen_denied') if t('err_reopen_denied') != 'err_reopen_denied' else "❌ Chỉ Admin hoặc Manager mới có thể mở lại dự án đã đóng (Closed).", "danger")
             return redirect(url_for('projects.project_detail', project_id=project_id))
 
     # Check 2: Secretary can only update to 'Close' (FOR REGULAR PROJECTS)
@@ -981,7 +982,7 @@ def update_project_status(project_id):
         is_quotation = project.status and (project.status.startswith('Quotation') or project.status.startswith('Quoting'))
         if not is_quotation:
              if status != 'Close' and status != project.status:
-                flash("❌ Secretary chỉ có quyền cập nhật trạng thái thành Close cho dự án thường.", "danger")
+                flash(t('err_secretary_close_only') if t('err_secretary_close_only') != 'err_secretary_close_only' else "❌ Secretary chỉ có quyền cập nhật trạng thái thành Close cho dự án thường.", "danger")
                 return redirect(url_for('projects.project_detail', project_id=project_id))
              # Also prevent arbitrary progress changes if not closing?
              # But here if status=='Close', progress is auto-set to 100.
@@ -989,14 +990,14 @@ def update_project_status(project_id):
     # Check 3: Leader/Member cannot decrease progress
     if current_user.role in ['leader', 'member']:
         if progress < project.progress:
-             flash("❌ Bạn không có quyền cập nhật lùi tiến độ dự án.", "danger")
+             flash(t('err_progress_decrease_denied') if t('err_progress_decrease_denied') != 'err_progress_decrease_denied' else "❌ Bạn không có quyền cập nhật lùi tiến độ dự án.", "danger")
              return redirect(url_for('projects.project_detail', project_id=project_id))
 
     # Check unfinished tasks
     unfinished_tasks_count = Task.query.filter(Task.project_id == project.id, Task.status != 'Done').count()
     if unfinished_tasks_count > 0:
         if status in ['Completed', 'Close'] or progress == 100:
-             flash("❌ Dự án còn công việc chưa hoàn thành, không thể cập nhật trạng thái Hoàn thành (100%).", "warning")
+             flash(t('err_unfinished_tasks') if t('err_unfinished_tasks') != 'err_unfinished_tasks' else "❌ Dự án còn công việc chưa hoàn thành, không thể cập nhật trạng thái Hoàn thành (100%).", "warning")
              return redirect(url_for('projects.project_detail', project_id=project_id))
 
     old_status, old_progress = project.status, project.progress
@@ -1019,7 +1020,7 @@ def update_project_status(project_id):
     )
     db.session.add(history)
     db.session.commit()
-    flash("✅ Trạng thái dự án đã được cập nhật.", "success")
+    flash(t('msg_status_updated') if t('msg_status_updated') != 'msg_status_updated' else "✅ Trạng thái dự án đã được cập nhật.", "success")
     return redirect(url_for('projects.project_detail', project_id=project.id))
 
 @projects_bp.route('/project/<int:project_id>')
@@ -1102,11 +1103,11 @@ def edit_history(history_id):
             if new_progress_raw != '':
                 record.new_progress = int(new_progress_raw)
         except ValueError:
-            flash("Giá trị tiến độ không hợp lệ.", "warning")
+            flash(t('err_progress_invalid') if t('err_progress_invalid') != 'err_progress_invalid' else "Giá trị tiến độ không hợp lệ.", "warning")
             return render_template('edit_history.html', record=record)
         record.detail = request.form.get('detail')
         db.session.commit()
-        flash("✅ Lịch sử cập nhật đã được chỉnh sửa.", "success")
+        flash(t('msg_history_updated') if t('msg_history_updated') != 'msg_history_updated' else "✅ Lịch sử cập nhật đã được chỉnh sửa.", "success")
         return redirect(url_for('projects.project_detail', project_id=record.project_id))
     return render_template('edit_history.html', record=record)
 
@@ -1123,7 +1124,7 @@ def delete_history(history_id):
     project_id = record.project_id
     db.session.delete(record)
     db.session.commit()
-    flash("🗑️ Bản ghi lịch sử đã được xóa.", "success")
+    flash(t('msg_history_deleted') if t('msg_history_deleted') != 'msg_history_deleted' else "🗑️ Bản ghi lịch sử đã được xóa.", "success")
     return redirect(url_for('projects.project_detail', project_id=project_id))
 
 @projects_bp.route('/projects/export_selected', methods=['POST'])
@@ -1133,7 +1134,7 @@ def export_selected_projects():
     data = request.get_json() or {}
     ids = data.get('ids', [])
     if not ids:
-        return jsonify(error="Không có dự án nào được chọn"), 400
+        return jsonify(error=t('err_no_project_selected') if t('err_no_project_selected') != 'err_no_project_selected' else "Không có dự án nào được chọn"), 400
 
     projects = Project.query.filter(Project.id.in_(ids)).all()
     current_date = datetime.now().strftime('%b %d')
@@ -1151,7 +1152,7 @@ def export_selected_projects():
                          as_attachment=True, download_name='projects_selected.pdf')
     except Exception as e:
         current_app.logger.exception("Export selected projects failed: %s", e)
-        return jsonify(error="Xuất PDF thất bại"), 500
+        return jsonify(error=t('err_pdf_export_failed') if t('err_pdf_export_failed') != 'err_pdf_export_failed' else "Xuất PDF thất bại"), 500
 
 @projects_bp.route('/project/<int:project_id>/add_question', methods=['POST'])
 @login_required
@@ -1163,9 +1164,10 @@ def add_question(project_id):
     if not content:
         if request.headers.get('HX-Request'):
             now = datetime.now(timezone.utc).replace(tzinfo=None)
+            source = request.values.get('source') or 'project_detail'
             questions_all = ProjectQuestion.query.filter_by(project_id=project_id).order_by(ProjectQuestion.created_at.asc()).all()
             questions = _filter_visible_questions(questions_all, now)
-            return render_template('partials/question_list.html', project=project, questions=questions)
+            return render_template('partials/question_list.html', project=project, questions=questions, source=source)
         flash(t('err_question_empty'), "warning")
         return redirect(url_for('projects.project_detail', project_id=project_id))
         
@@ -1174,9 +1176,17 @@ def add_question(project_id):
         question=content,
         created_by_id=current_user.id
     )
-    db.session.add(q)
-    db.session.commit()
-    log_activity('CREATE_QUESTION', details=f'Added question to project {project.name}')
+    try:
+        db.session.add(q)
+        db.session.commit()
+        log_activity('CREATE_QUESTION', details=f'Added question to project {project.name}')
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error adding question: {e}")
+        if request.headers.get('HX-Request'):
+            return "Error saving question", 500
+        flash(t('err_question_save_failed') if t('err_question_save_failed') != 'err_question_save_failed' else "Có lỗi xảy ra khi lưu câu hỏi.", "danger")
+        return redirect(url_for('projects.project_detail', project_id=project_id))
     
     if request.headers.get('HX-Request'):
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -1208,16 +1218,106 @@ def answer_question(question_id):
 
     allowed_project = get_projects_query().filter(Project.id == q.project_id).first()
     if not allowed_project:
+        if request.headers.get('HX-Request'):
+            resp = make_response('', 204)
+            resp.headers['HX-Redirect'] = url_for('main.dashboard')
+            return resp
         abort(403)
         
-    # Permission check: Higher role > Lower role, and not self
     creator_role_level = q.created_by.role_level if q.created_by else 0
-    if current_user.id == q.created_by_id or current_user.role_level <= creator_role_level:
+    try:
+        creator_id = int(q.created_by_id) if q.created_by_id is not None else None
+    except Exception:
+        creator_id = q.created_by_id
+    can_answer = (
+        (current_user.id != creator_id)
+        and (
+            current_user.role_level >= 4
+            or (current_user.role_level > creator_role_level)
+        )
+    )
+    if not can_answer:
+        if request.headers.get('HX-Request'):
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            source = request.values.get('source')
+            if source in ['dashboard', 'dashboard_card', 'dashboard_modal']:
+                cutoff = now - timedelta(days=10)
+                allowed_projects_subq = (
+                    get_projects_query()
+                    .filter(Project.status != 'Completed')
+                    .with_entities(Project.id.label('id'))
+                    .subquery()
+                )
+                allowed_project_ids = db.session.query(allowed_projects_subq.c.id)
+                questions_all = (
+                    ProjectQuestion.query.filter(
+                        ProjectQuestion.project_id.in_(allowed_project_ids),
+                        or_(ProjectQuestion.answered_at.is_(None), ProjectQuestion.answered_at >= cutoff),
+                    )
+                    .options(
+                        joinedload(ProjectQuestion.project),
+                        joinedload(ProjectQuestion.created_by),
+                        joinedload(ProjectQuestion.answered_by),
+                    )
+                    .order_by(ProjectQuestion.created_at.desc())
+                    .limit(300)
+                    .all()
+                )
+                questions = _filter_visible_questions(questions_all, now)
+                if source == 'dashboard_card':
+                    return render_template('partials/dashboard_question_list.html', questions=questions[:3])
+                if source == 'dashboard':
+                    return render_template('partials/question_list.html', questions=questions[:10], show_project_name=True, source=source)
+                html_modal = render_template('partials/question_list.html', questions=questions, show_project_name=True, source=source)
+                html_card = render_template('partials/dashboard_question_list.html', questions=questions[:3])
+                html_card = html_card.replace('id="question-list-dashboard_card"', 'id="question-list-dashboard_card" hx-swap-oob="true"')
+                return html_modal + html_card
+            questions_all = ProjectQuestion.query.filter_by(project_id=q.project_id).order_by(ProjectQuestion.created_at.asc()).all()
+            questions = _filter_visible_questions(questions_all, now)
+            return render_template('partials/question_list.html', project=q.project, questions=questions, source=source or 'project_detail')
         flash(t('err_answer_denied'), "danger")
         return redirect(url_for('projects.project_detail', project_id=q.project_id))
 
     answer_content = request.form.get('answer')
     if not answer_content:
+        if request.headers.get('HX-Request'):
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            source = request.values.get('source')
+            if source in ['dashboard', 'dashboard_card', 'dashboard_modal']:
+                cutoff = now - timedelta(days=10)
+                allowed_projects_subq = (
+                    get_projects_query()
+                    .filter(Project.status != 'Completed')
+                    .with_entities(Project.id.label('id'))
+                    .subquery()
+                )
+                allowed_project_ids = db.session.query(allowed_projects_subq.c.id)
+                questions_all = (
+                    ProjectQuestion.query.filter(
+                        ProjectQuestion.project_id.in_(allowed_project_ids),
+                        or_(ProjectQuestion.answered_at.is_(None), ProjectQuestion.answered_at >= cutoff),
+                    )
+                    .options(
+                        joinedload(ProjectQuestion.project),
+                        joinedload(ProjectQuestion.created_by),
+                        joinedload(ProjectQuestion.answered_by),
+                    )
+                    .order_by(ProjectQuestion.created_at.desc())
+                    .limit(300)
+                    .all()
+                )
+                questions = _filter_visible_questions(questions_all, now)
+                if source == 'dashboard_card':
+                    return render_template('partials/dashboard_question_list.html', questions=questions[:3])
+                if source == 'dashboard':
+                    return render_template('partials/question_list.html', questions=questions[:10], show_project_name=True, source=source)
+                html_modal = render_template('partials/question_list.html', questions=questions, show_project_name=True, source=source)
+                html_card = render_template('partials/dashboard_question_list.html', questions=questions[:3])
+                html_card = html_card.replace('id=\"question-list-dashboard_card\"', 'id=\"question-list-dashboard_card\" hx-swap-oob=\"true\"')
+                return html_modal + html_card
+            questions_all = ProjectQuestion.query.filter_by(project_id=q.project_id).order_by(ProjectQuestion.created_at.asc()).all()
+            questions = _filter_visible_questions(questions_all, now)
+            return render_template('partials/question_list.html', project=q.project, questions=questions, source=source or 'project_detail')
         flash(t('err_answer_empty'), "warning")
         return redirect(url_for('projects.project_detail', project_id=q.project_id))
         
@@ -1285,7 +1385,11 @@ def delete_question(question_id):
         abort(403)
 
     # Permission check: Only Creator, Project Owner, Leader, Manager, Admin
-    is_creator = q.created_by_id == current_user.id
+    try:
+        creator_id = int(q.created_by_id) if q.created_by_id is not None else None
+    except Exception:
+        creator_id = q.created_by_id
+    is_creator = creator_id == current_user.id
     is_owner = (q.project.owner_id == current_user.id)
     if not (is_creator or is_owner or current_user.role in ['admin', 'manager', 'leader']):
         flash(t('err_delete_question_denied'), "danger")
