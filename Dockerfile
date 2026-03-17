@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
+    wkhtmltopdf \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
