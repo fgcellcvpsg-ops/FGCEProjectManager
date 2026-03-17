@@ -21,7 +21,7 @@ def upgrade():
     conn = op.get_bind()
     
     if conn.engine.name == 'postgresql':
-        op.execute("ALTER TABLE client ADD COLUMN IF NOT EXISTS note TEXT")
+        op.execute(sa.text("ALTER TABLE client ADD COLUMN IF NOT EXISTS note TEXT"))
         
         # Alter symbol column type
         with op.batch_alter_table('client', schema=None) as batch_op:

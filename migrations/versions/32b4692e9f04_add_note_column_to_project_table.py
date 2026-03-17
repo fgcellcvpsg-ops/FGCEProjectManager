@@ -22,8 +22,9 @@ def upgrade():
     
     # Raw SQL execution with IF NOT EXISTS (PostgreSQL syntax)
     # Using fallback logic for SQLite (local dev)
+    # Using text() to wrap raw SQL for SQLAlchemy execution
     if conn.engine.name == 'postgresql':
-        op.execute("ALTER TABLE project ADD COLUMN IF NOT EXISTS note TEXT")
+        op.execute(sa.text("ALTER TABLE project ADD COLUMN IF NOT EXISTS note TEXT"))
     else:
         inspector = sa.inspect(conn)
         columns = [c['name'] for c in inspector.get_columns('project')]
