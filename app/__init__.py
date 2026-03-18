@@ -51,6 +51,14 @@ def create_app(config_class=None):
     if database_url and database_url.startswith("postgresql://") and "?" not in database_url:
         database_url += "?sslmode=require"
         
+    # --- AUTO FIX DATABASE ON STARTUP ---
+    try:
+        from app.auto_fix_db import auto_fix_database
+        auto_fix_database(database_url or f"sqlite:///{db_uri_path}")
+    except Exception as e:
+        print(f"Auto fix error: {e}")
+    # ------------------------------------
+        
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url or f"sqlite:///{db_uri_path}"
     
     # print(f"DEBUG: Instance Path: {app.instance_path}")
