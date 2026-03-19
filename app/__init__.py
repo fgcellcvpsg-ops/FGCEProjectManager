@@ -50,6 +50,9 @@ def create_app(config_class=None):
     # Ensure SSL for PostgreSQL connections (Render requires SSL)
     if database_url and database_url.startswith("postgresql://") and "?" not in database_url:
         database_url += "?sslmode=require"
+
+    if database_url and database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
         
     # --- AUTO FIX DATABASE ON STARTUP ---
     try:
