@@ -1,8 +1,10 @@
 # Environments
 .env
+.env.*
 .venv
 venv/
 env/
+env.txt
 __pycache__/
 *.pyc
 instance/
