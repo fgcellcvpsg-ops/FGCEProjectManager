@@ -204,6 +204,32 @@ def create_app(config_class=None):
         response.headers['X-XSS-Protection'] = '1; mode=block'
         return response
 
+    try:
+        with app.app_context():
+            db.create_all()
+            if os.getenv("ALLOW_SEED_ADMIN", "false").lower() == "true":
+                admin_password = os.getenv("ADMIN_PASSWORD")
+                if admin_password:
+                    admin_username = (os.getenv("ADMIN_USERNAME") or "admin").strip().lower()
+                    admin_email = (os.getenv("ADMIN_EMAIL") or "admin@example.com").strip().lower()
+                    existing = User.query.filter_by(username=admin_username).first()
+                    if not existing:
+                        admin = User(
+                            username=admin_username,
+                            email=admin_email,
+                            display_name="Administrator",
+                            role="admin",
+                            auth_type="manual",
+                            is_allowed=True
+                        )
+                        admin.set_password(admin_password)
+                        db.session.add(admin)
+                        db.session.commit()
+                else:
+                    app.logger.error("ALLOW_SEED_ADMIN=true nhưng thiếu ADMIN_PASSWORD")
+    except Exception as e:
+        app.logger.exception("Bootstrap DB/User lỗi: %s", e)
+
     return app
 
 def create_indexes(app):
