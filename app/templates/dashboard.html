@@ -119,6 +119,11 @@
         top: 0;
         z-index: 2;
     }
+
+    #dashboardAlertsBody .content-list-item {
+        padding-left: 2px !important;
+        padding-right: 2px !important;
+    }
     
     [data-theme="dark"] .dashboard-project-table-wrapper table th {
         background-color: #2d3748 !important;
@@ -516,7 +521,7 @@
                                                     <i class="fas fa-exclamation-circle text-danger me-2 small"></i>
                                                     <span class="item-title text-truncate fw-bold text-primary" style="font-size: 0.75rem;">{{ p.name|project_title }}</span>
                                                 </div>
-                                                <small class="text-danger fw-bold ms-2 text-nowrap">{{ p.deadline|format_date }}</small>
+                                                <small class="text-danger ms-2 text-nowrap">{{ p.deadline|format_date }}</small>
                                             </div>
                                         </a>
                                         {% endfor %}
@@ -527,7 +532,7 @@
                                                     <i class="fas fa-clock text-warning me-2 small"></i>
                                                     <span class="item-title text-truncate fw-bold text-primary" style="font-size: 0.75rem;">{{ p.name|project_title }}</span>
                                                 </div>
-                                                <small class="text-muted fw-bold ms-2 text-nowrap">{{ p.deadline|format_date }}</small>
+                                                <small class="text-muted ms-2 text-nowrap">{{ p.deadline|format_date }}</small>
                                             </div>
                                         </a>
                                         {% endfor %}
@@ -538,7 +543,7 @@
                                                     <i class="fas fa-calendar-check me-2 small" style="color: var(--brand-purple);"></i>
                                                     <span class="item-title text-truncate">{{ a.content }}</span>
                                                 </div>
-                                                <small class="text-muted fw-bold ms-2 text-nowrap">{{ a.note_date|format_date }}</small>
+                                                <small class="text-muted ms-2 text-nowrap">{{ a.note_date|format_date }}</small>
                                             </div>
                                         </a>
                                         {% endfor %}
