@@ -1,9 +1,15 @@
+import base64
+import decimal
+import json
 import os
+import tempfile
 import zipfile
-import shutil
-from datetime import datetime
-from flask import Blueprint, render_template, request, flash, redirect, url_for, send_file, current_app
+from datetime import date, datetime
+from flask import Blueprint, flash, redirect, render_template, send_file, url_for, current_app
 from flask_login import login_required
+from sqlalchemy import MetaData, Table, inspect, insert, select, text
+from sqlalchemy.engine.url import make_url
+from app.extensions import db
 from app.utils import min_role_required, t
 
 backup_bp = Blueprint('backup', __name__)
@@ -14,8 +20,99 @@ def get_backup_dir():
         os.makedirs(backup_dir)
     return backup_dir
 
-def get_db_path():
-    return os.path.join(current_app.instance_path, 'projects.db')
+def _safe_join(base_dir, filename):
+    if not filename:
+        raise ValueError("Invalid filename")
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        raise ValueError("Invalid filename")
+    full_path = os.path.abspath(os.path.join(base_dir, safe_name))
+    base_abs = os.path.abspath(base_dir)
+    if not full_path.startswith(base_abs + os.sep):
+        raise ValueError("Invalid filename")
+    return full_path
+
+def _current_db_uri():
+    return current_app.config.get('SQLALCHEMY_DATABASE_URI') or os.getenv('DATABASE_URL') or ''
+
+def _sqlite_db_path(db_uri):
+    url = make_url(db_uri)
+    if url.drivername != 'sqlite':
+        return None
+    db_file = url.database
+    if not db_file:
+        return None
+    if os.path.isabs(db_file):
+        return db_file
+    return os.path.join(os.getcwd(), db_file)
+
+def _json_default(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, decimal.Decimal):
+        return str(value)
+    if isinstance(value, (bytes, bytearray)):
+        return base64.b64encode(bytes(value)).decode('ascii')
+    return str(value)
+
+def _infer_and_cast(table, record):
+    for col in table.columns:
+        if col.name not in record:
+            continue
+        v = record[col.name]
+        if v is None:
+            continue
+        try:
+            py_type = col.type.python_type
+        except Exception:
+            continue
+        if isinstance(v, py_type):
+            continue
+        try:
+            if py_type is datetime and isinstance(v, str):
+                record[col.name] = datetime.fromisoformat(v)
+            elif py_type is date and isinstance(v, str):
+                record[col.name] = date.fromisoformat(v)
+            elif py_type is bool and isinstance(v, str):
+                record[col.name] = v.lower() in ('1', 'true', 'yes', 'y', 'on')
+            elif py_type is int and isinstance(v, str):
+                record[col.name] = int(v)
+            elif py_type is float and isinstance(v, str):
+                record[col.name] = float(v)
+            elif py_type is decimal.Decimal and isinstance(v, str):
+                record[col.name] = decimal.Decimal(v)
+        except Exception:
+            continue
+    return record
+
+def _toposort_tables(tables, inspector):
+    deps = {t: set() for t in tables}
+    for t in tables:
+        try:
+            fks = inspector.get_foreign_keys(t) or []
+        except Exception:
+            fks = []
+        for fk in fks:
+            ref = fk.get('referred_table')
+            if ref and ref in deps and ref != t:
+                deps[t].add(ref)
+
+    ordered = []
+    ready = [t for t, d in deps.items() if not d]
+    ready.sort()
+    while ready:
+        n = ready.pop(0)
+        ordered.append(n)
+        for m in list(deps.keys()):
+            if n in deps[m]:
+                deps[m].remove(n)
+                if not deps[m] and m not in ordered and m not in ready:
+                    ready.append(m)
+                    ready.sort()
+
+    remaining = [t for t in tables if t not in ordered]
+    remaining.sort()
+    return ordered + remaining
 
 @backup_bp.route('/backup', endpoint='list')
 @login_required
@@ -27,10 +124,13 @@ def backup_list():
         fp = os.path.join(backup_dir, fn)
         try:
             st = os.stat(fp)
+            size_bytes = int(st.st_size)
+            size_display = f"{size_bytes} B" if size_bytes < 1024 else f"{round(size_bytes / 1024, 1)} KB"
             backups.append({
                 'filename': fn,
                 'created_at': datetime.fromtimestamp(st.st_mtime),
-                'size': round(st.st_size / 1024, 1)
+                'size_bytes': size_bytes,
+                'size_display': size_display,
             })
         except Exception:
             continue
@@ -42,18 +142,61 @@ def backup_list():
 @min_role_required('admin')
 def backup_db():
     backup_dir = get_backup_dir()
-    db_path = get_db_path()
-    
+    db_uri = _current_db_uri()
+
     name = f"backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
     fp = os.path.join(backup_dir, name)
     try:
-        with zipfile.ZipFile(fp, 'w', zipfile.ZIP_DEFLATED) as z:
-            z.write(db_path, arcname='projects.db')
-        flash(t('msg_backup_created').format(name=name) if t('msg_backup_created') != 'msg_backup_created' else f"✅ Đã tạo backup: {name}", "success")
+        sqlite_path = _sqlite_db_path(db_uri)
+        if sqlite_path and os.path.exists(sqlite_path):
+            with zipfile.ZipFile(fp, 'w', zipfile.ZIP_DEFLATED) as z:
+                z.write(sqlite_path, arcname=os.path.basename(sqlite_path))
+        else:
+            engine = db.engine
+            inspector = inspect(engine)
+            meta = MetaData()
+            table_names = [t for t in inspector.get_table_names() if t != 'alembic_version']
+            with tempfile.TemporaryDirectory(dir=backup_dir) as tmp_dir:
+                tables_dir = os.path.join(tmp_dir, 'tables')
+                os.makedirs(tables_dir, exist_ok=True)
+                manifest = {
+                    'created_at': datetime.utcnow().isoformat() + 'Z',
+                    'dialect': engine.dialect.name,
+                    'tables': table_names,
+                }
+                with open(os.path.join(tmp_dir, 'manifest.json'), 'w', encoding='utf-8') as f:
+                    json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+                for table_name in table_names:
+                    table = Table(table_name, meta, autoload_with=engine)
+                    out_path = os.path.join(tables_dir, f"{table_name}.jsonl")
+                    with open(out_path, 'w', encoding='utf-8') as f:
+                        rows = db.session.execute(select(table)).mappings()
+                        for row in rows:
+                            f.write(json.dumps(dict(row), ensure_ascii=False, default=_json_default))
+                            f.write("\n")
+
+                with zipfile.ZipFile(fp, 'w', zipfile.ZIP_DEFLATED) as z:
+                    z.write(os.path.join(tmp_dir, 'manifest.json'), arcname='manifest.json')
+                    for table_name in table_names:
+                        z.write(os.path.join(tables_dir, f"{table_name}.jsonl"), arcname=f"tables/{table_name}.jsonl")
+
+        if not os.path.exists(fp) or os.path.getsize(fp) < 100:
+            raise RuntimeError("Backup file is empty")
+
+        msg_tpl = t('msg_backup_created')
+        msg = msg_tpl + name if msg_tpl != 'msg_backup_created' else f"✅ Đã tạo backup: {name}"
+        flash(msg, "success")
     except Exception as e:
         current_app.logger.exception("Backup failed: %s", e)
-        flash(t('err_backup_create_failed') if t('err_backup_create_failed') != 'err_backup_create_failed' else "❌ Tạo backup thất bại.", "danger")
-        
+        try:
+            if os.path.exists(fp):
+                os.remove(fp)
+        except Exception:
+            pass
+        err = t('err_backup_failed')
+        flash(err if err != 'err_backup_failed' else "❌ Tạo backup thất bại.", "danger")
+
     return redirect(url_for('backup.list'))
 
 
@@ -62,7 +205,8 @@ def backup_db():
 @min_role_required('admin')
 def download_backup(filename):
     backup_dir = get_backup_dir()
-    return send_file(os.path.join(backup_dir, filename), as_attachment=True)
+    fp = _safe_join(backup_dir, filename)
+    return send_file(fp, as_attachment=True)
 
 
 @backup_bp.route('/restore_backup/<filename>', methods=['POST'])
@@ -70,34 +214,75 @@ def download_backup(filename):
 @min_role_required('admin')
 def restore_backup(filename):
     backup_dir = get_backup_dir()
-    db_path = get_db_path()
-    
-    fp = os.path.join(backup_dir, filename)
+    fp = _safe_join(backup_dir, filename)
+    db_uri = _current_db_uri()
     try:
         with zipfile.ZipFile(fp, 'r') as z:
-            z.extract('projects.db', current_app.instance_path)
-        # Verify if extracted file needs moving (if zip structure was flat, it extracts to instance_path/projects.db)
-        # If it was zipped with folder structure, it might be different. 
-        # But arcname='projects.db' ensures flat structure.
-        
-        # In app.py: shutil.copyfile(os.path.join(app.instance_path, 'projects.db'), db_path)
-        # Wait, extract already places it in instance_path. 
-        # If db_path IS os.path.join(current_app.instance_path, 'projects.db'), then extract overwrites it?
-        # app.py logic:
-        # z.extract('projects.db', app.instance_path)
-        # shutil.copyfile(os.path.join(app.instance_path, 'projects.db'), db_path)
-        # If db_path is exactly that file, copyfile to itself might be redundant or fail?
-        # Actually in app.py db_path is defined as `os.path.join(app.instance_path, 'projects.db')`.
-        # So `z.extract` should be enough if it overwrites.
-        # But let's follow app.py logic to be safe, maybe `db_path` was different?
-        # In app.py: db_path = os.path.join(app.instance_path, 'projects.db')
-        # So z.extract overwrites it.
-        
-        flash(t('msg_backup_restored') if t('msg_backup_restored') != 'msg_backup_restored' else "♻️ Phục hồi thành công. Khởi động lại ứng dụng.", "success")
+            sqlite_path = _sqlite_db_path(db_uri)
+            if sqlite_path:
+                arc_candidates = [n for n in z.namelist() if n.endswith('.db')]
+                if not arc_candidates:
+                    raise RuntimeError("No database file found in backup")
+                arcname = arc_candidates[0]
+                os.makedirs(os.path.dirname(sqlite_path), exist_ok=True)
+                with tempfile.TemporaryDirectory(dir=backup_dir) as tmp_dir:
+                    extracted = z.extract(arcname, tmp_dir)
+                    os.replace(extracted, sqlite_path)
+            else:
+                names = z.namelist()
+                table_files = [n for n in names if n.startswith('tables/') and n.endswith('.jsonl')]
+                if not table_files:
+                    raise RuntimeError("Invalid backup format")
+
+                engine = db.engine
+                inspector = inspect(engine)
+                meta = MetaData()
+                restore_tables = [os.path.splitext(os.path.basename(n))[0] for n in table_files]
+                existing_tables = set(inspector.get_table_names())
+                restore_tables = [t for t in restore_tables if t in existing_tables and t != 'alembic_version']
+                restore_tables = _toposort_tables(restore_tables, inspector)
+
+                quoted = ", ".join([f"\"{t}\"" for t in restore_tables])
+                if engine.dialect.name == 'postgresql' and quoted:
+                    db.session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+                    db.session.commit()
+
+                for table_name in restore_tables:
+                    table = Table(table_name, meta, autoload_with=engine)
+                    member_name = f"tables/{table_name}.jsonl"
+                    with z.open(member_name) as f:
+                        batch = []
+                        for raw in f:
+                            rec = json.loads(raw.decode('utf-8'))
+                            rec = _infer_and_cast(table, rec)
+                            batch.append(rec)
+                            if len(batch) >= 500:
+                                db.session.execute(insert(table), batch)
+                                batch = []
+                        if batch:
+                            db.session.execute(insert(table), batch)
+                    db.session.commit()
+
+                if engine.dialect.name == 'postgresql':
+                    for table_name in restore_tables:
+                        table = Table(table_name, meta, autoload_with=engine)
+                        if 'id' in table.c:
+                            db.session.execute(
+                                text(
+                                    f"SELECT setval(pg_get_serial_sequence(:tname, 'id'), "
+                                    f"(SELECT COALESCE(MAX(id), 1) FROM \"{table_name}\"), true)"
+                                ),
+                                {'tname': table_name},
+                            )
+                    db.session.commit()
+
+        msg = t('msg_restore_success')
+        flash(msg if msg != 'msg_restore_success' else "♻️ Phục hồi thành công. Khởi động lại ứng dụng.", "success")
     except Exception as e:
         current_app.logger.exception("Restore failed: %s", e)
-        flash(t('err_backup_restore_failed') if t('err_backup_restore_failed') != 'err_backup_restore_failed' else "❌ Phục hồi thất bại.", "danger")
-        
+        err = t('err_restore_failed')
+        flash(err if err != 'err_restore_failed' else "❌ Phục hồi thất bại.", "danger")
+
     return redirect(url_for('backup.list'))
 
 
@@ -107,7 +292,7 @@ def restore_backup(filename):
 def delete_backup(filename):
     backup_dir = get_backup_dir()
     try:
-        os.remove(os.path.join(backup_dir, filename))
+        os.remove(_safe_join(backup_dir, filename))
         flash(t('msg_backup_deleted'), "success")
     except Exception as e:
         current_app.logger.exception("Delete backup failed: %s", e)
