@@ -5,7 +5,7 @@ import os
 import tempfile
 import zipfile
 from datetime import date, datetime
-from flask import Blueprint, flash, redirect, render_template, send_file, url_for, current_app
+from flask import Blueprint, flash, redirect, render_template, request, send_file, url_for, current_app
 from flask_login import login_required
 from sqlalchemy import MetaData, Table, inspect, insert, select, text
 from sqlalchemy.engine.url import make_url
@@ -15,10 +15,14 @@ from app.utils import min_role_required, t
 backup_bp = Blueprint('backup', __name__)
 
 def get_backup_dir():
-    backup_dir = os.path.join(os.getcwd(), 'backups')
-    if not os.path.exists(backup_dir):
-        os.makedirs(backup_dir)
-    return backup_dir
+    backup_dir = os.getenv('BACKUP_DIR') or os.path.join(current_app.instance_path, 'backups')
+    try:
+        os.makedirs(backup_dir, exist_ok=True)
+        return backup_dir
+    except Exception:
+        fallback = os.path.join(tempfile.gettempdir(), 'fgce_backups')
+        os.makedirs(fallback, exist_ok=True)
+        return fallback
 
 def _safe_join(base_dir, filename):
     if not filename:
@@ -137,10 +141,14 @@ def backup_list():
     return render_template('backup.html', backups=backups)
 
 
-@backup_bp.route('/backup_db', methods=['POST'])
+@backup_bp.route('/backup_db', methods=['GET', 'POST'])
 @login_required
 @min_role_required('admin')
 def backup_db():
+    if request.method == 'GET':
+        flash("Vui lòng dùng nút tạo backup (POST).", "warning")
+        return redirect(url_for('backup.list'))
+
     backup_dir = get_backup_dir()
     db_uri = _current_db_uri()
 
