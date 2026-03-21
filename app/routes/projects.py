@@ -9,7 +9,7 @@ from sqlalchemy import or_, and_, func, extract, case
 from sqlalchemy.orm import joinedload, aliased
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from app.extensions import db
-from app.models import Project, Client, User, ProjectOwner, History, Task, CalendarNote, ProjectQuestion
+from app.models import Project, Client, User, ProjectOwner, History, Task, CalendarNote, ProjectQuestion, WorkHistoryReport
 from app.services import get_projects_query, apply_project_filters
 from app.utils import min_role_required, t, get_lang, log_activity
 
@@ -974,8 +974,11 @@ def delete_project(project_id):
     if not project:
         abort(404)
     try:
-        History.query.filter_by(project_id=project_id).delete()
-        Task.query.filter_by(project_id=project_id).delete()
+        ProjectOwner.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+        ProjectQuestion.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+        WorkHistoryReport.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+        History.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+        Task.query.filter_by(project_id=project_id).delete(synchronize_session=False)
         db.session.delete(project)
         db.session.commit()
         log_activity('DELETE_PROJECT', details=f'Deleted project {project.name}')
